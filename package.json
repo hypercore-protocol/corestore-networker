@@ -1,0 +1,31 @@
+{
+  "name": "megastore-swarm-networking",
+  "version": "1.0.0",
+  "description": "A Megastore networker based on discovery-swarm ",
+  "main": "index.js",
+  "dependencies": {
+    "dat-encoding": "^5.0.1",
+    "dat-swarm-defaults": "^1.0.2",
+    "discovery-swarm": "^5.1.4"
+  },
+  "devDependencies": {
+    "standard": "^12.0.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrewosh/megastore-swarm-networking.git"
+  },
+  "keywords": [
+    "megastore",
+    "discovery-swarm"
+  ],
+  "author": "Andrew Osheroff <andrewosh@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/andrewosh/megastore-swarm-networking/issues"
+  },
+  "homepage": "https://github.com/andrewosh/megastore-swarm-networking#readme"
+}
