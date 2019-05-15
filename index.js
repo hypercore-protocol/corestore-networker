@@ -1,20 +1,25 @@
 const crypto = require('crypto')
+const { EventEmitter } = require('events')
+const { pipeline } = require('stream')
 
 const datEncoding = require('dat-encoding')
+const hypercoreProtocol = require('hypercore-protocol')
 const discoverySwarm = require('discovery-swarm')
 const swarmDefaults = require('dat-swarm-defaults')
+const duplexify = require('duplexify')
 
 const log = require('debug')('corestore:network')
 
-class SwarmNetworker {
+class SwarmNetworker extends EventEmitter {
   constructor (opts = {}) {
+    super()
     this.opts = opts
     this.id = opts.id || crypto.randomBytes(32)
 
     this._swarm = discoverySwarm(swarmDefaults({
       id: this.id,
       hash: false,
-      utp: false && defaultTrue(opts.utp),
+      utp: defaultTrue(opts.utp),
       tcp: defaultTrue(opts.tcp),
       dht: defaultTrue(opts.dht),
       stream: this._createReplicationStream.bind(this)
@@ -22,28 +27,41 @@ class SwarmNetworker {
     this._replicationStreams = new Map()
     this._replicators = new Map()
 
-    console.log('LISTENING WIHT OPTS:', opts)
     this._swarm.listen(opts.port || 3005)
+    this._swarm.on('error', err => this.emit('error', err))
   }
 
   _createReplicationStream (info) {
-    console.log('CREATING REPLICATION STREAM FOR INFO:', info)
-    if (!info.channel) return
-    const keyString = datEncoding.encode(info.channel)
-
-    const replicate = this._replicators.get(keyString)
-    const streams = this._replicationStreams.get(keyString)
-    if (!replicate || !streams) throw new Error('The swarm requested a discovery key which is not being seeded.')
-
-    // TODO: Support encrypted replication streams.
-    const stream = replicate({
+    const self = this
+    const streamOpts = {
       live: true,
       encrypt: false,
       id: this.id
-    })
+    }
 
-    streams.push(stream)
-    return stream
+    if (info.channel) {
+      const stream = getStream(info.channel) 
+      stream.peerInfo = info
+      return stream
+    } else {
+      const proxy = hypercoreProtocol(streamOpts)
+      proxy.peerInfo = info
+      proxy.once('feed', discoveryKey => {
+        getStream(discoveryKey, proxy)
+      })
+      return proxy
+    }
+
+    function getStream (discoveryKey, stream) {
+      const keyString = datEncoding.encode(discoveryKey)
+
+      const replicate = self._replicators.get(keyString)
+      const streams = self._replicationStreams.get(keyString)
+      if (!replicate || !streams) throw new Error('The swarm requested a discovery key which is not being seeded.')
+
+      // TODO: Support encrypted replication streams.
+      return replicate({ ...streamOpts, stream })
+    }
   }
 
   ready () {
