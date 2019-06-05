@@ -4,8 +4,8 @@ const { pipeline } = require('stream')
 
 const datEncoding = require('dat-encoding')
 const hypercoreProtocol = require('hypercore-protocol')
-const discoverySwarm = require('discovery-swarm')
-const swarmDefaults = require('dat-swarm-defaults')
+const hyperswarm = require('@hyperswarm/network')
+const pump = require('pump')
 const duplexify = require('duplexify')
 
 const log = require('debug')('corestore:network')
@@ -16,56 +16,62 @@ class SwarmNetworker extends EventEmitter {
     this.opts = opts
     this.id = opts.id || crypto.randomBytes(32)
 
-    this._swarm = discoverySwarm(swarmDefaults({
-      id: this.id,
-      hash: false,
-      utp: defaultTrue(opts.utp),
-      tcp: defaultTrue(opts.tcp),
-      dht: defaultTrue(opts.dht),
-      stream: this._createReplicationStream.bind(this)
-    }))
+    this._swarm = hyperswarm(opts)
     this._replicationStreams = new Map()
     this._replicators = new Map()
 
-    this._swarm.listen(opts.port || 3005)
     this._swarm.on('error', err => this.emit('error', err))
+    this._swarm.on('connection', (socket, details) => {
+      const discoveryKey = details.peer ? details.peer.topic : null
+      this._createReplicationStream(discoveryKey, socket)
+    })
   }
 
-  _createReplicationStream (info) {
+  _createReplicationStream (discoveryKey, socket) {
     const self = this
+
+    // TODO: Support encrypted replication streams.
     const streamOpts = {
       live: true,
       encrypt: false,
       id: this.id
     }
+    var streams
 
-    if (info.channel) {
-      const stream = getStream(info.channel) 
-      stream.peerInfo = info
-      return stream
+    if (discoveryKey) {
+      var dkeyString = datEncoding.encode(discoveryKey)
+      var stream = createStream(discoveryKey)
     } else {
-      const proxy = hypercoreProtocol(streamOpts)
-      proxy.peerInfo = info
-      proxy.once('feed', discoveryKey => {
-        getStream(discoveryKey, proxy)
+      stream = hypercoreProtocol(streamOpts)
+      stream.once('feed', discoveryKey => {
+        dkeyString = datEncoding.encode(discoveryKey)
+        createStream(discoveryKey, stream)
       })
-      return proxy
     }
 
-    function getStream (discoveryKey, stream) {
+    pump(socket, stream, socket, err => {
+      if (err) self.emit('replication-error', err)
+      return onclose()
+    })
+
+    function onclose () {
+      if (!streams) return
+      const idx = streams.indexOf(stream)
+      if (idx !== -1) streams.splice(idx, 1)
+    }
+
+    function createStream (discoveryKey, stream) {
       const keyString = datEncoding.encode(discoveryKey)
 
       const replicate = self._replicators.get(keyString)
-      const streams = self._replicationStreams.get(keyString)
+      streams = self._replicationStreams.get(keyString)
       if (!replicate || !streams) throw new Error('The swarm requested a discovery key which is not being seeded.')
 
-      // TODO: Support encrypted replication streams.
-      return replicate({ ...streamOpts, stream })
-    }
-  }
+      const innerStream = replicate({ ...streamOpts, stream })
+      streams.push(stream || innerStream)
 
-  ready () {
-    return new Promise(resolve => this._swarm.on('listening', resolve))
+      return innerStream
+    }
   }
 
   seed (discoveryKey, replicate) {
@@ -75,7 +81,10 @@ class SwarmNetworker extends EventEmitter {
     this._replicationStreams.set(keyString, streams)
     this._replicators.set(keyString, replicate)
 
-    this._swarm.join(discoveryKey)
+    this._swarm.join(discoveryKey, {
+      announce: true,
+      lookup: true
+    })
   }
 
   unseed (discoveryKey) {
@@ -83,7 +92,7 @@ class SwarmNetworker extends EventEmitter {
 
     const keyString = datEncoding.encode(discoveryKey)
     const streams = this._replicationStreams.get(keyString)
-    if (!streams) return
+    if (!streams || !streams.length) return
 
     for (let stream of streams) {
       stream.destroy()
@@ -94,17 +103,15 @@ class SwarmNetworker extends EventEmitter {
   }
 
   async close () {
-    return new Promise((resolve, reject) => {
-      this._swarm.destroy(err => {
-        if (err) return reject(err)
-        return resolve()
-      })
+    return new Promise(resolve => {
+      for (let [dkey,] of new Map(...[this._replicators])) {
+        this.unseed(datEncoding.decode(dkey))
+      }
+      this._swarm.discovery.destroy()
+      this._swarm.server.close()
+      return resolve()
     })
   }
 }
 
 module.exports = SwarmNetworker
-
-function defaultTrue (x) {
-  return x === undefined ? true : x
-}
