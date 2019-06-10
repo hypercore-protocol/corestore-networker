@@ -1,2 +1,2 @@
 # megastore-swarm-networking
-A Megastore networker based on discovery-swarm
+A Megastore networking module that uses [hyperswarm](https://github.com/hyperswarm/network).
