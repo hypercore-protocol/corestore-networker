@@ -5,8 +5,8 @@ const { pipeline } = require('stream')
 const datEncoding = require('dat-encoding')
 const hypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('@hyperswarm/network')
-const pump = require('pump')
 const duplexify = require('duplexify')
+const pump = require('pump')
 
 const log = require('debug')('corestore:network')
 
@@ -17,8 +17,8 @@ class SwarmNetworker extends EventEmitter {
     this.id = opts.id || crypto.randomBytes(32)
 
     this._swarm = hyperswarm(opts)
+    this._replicatorFactory = null
     this._replicationStreams = new Map()
-    this._replicators = new Map()
 
     this._swarm.on('error', err => this.emit('error', err))
     this._swarm.on('connection', (socket, details) => {
@@ -37,49 +37,74 @@ class SwarmNetworker extends EventEmitter {
       id: this.id
     }
     var streams
+    var replicationStream
+    const proxy = duplexify()
 
     if (discoveryKey) {
       var dkeyString = datEncoding.encode(discoveryKey)
-      var stream = createStream(discoveryKey)
+      createStream(discoveryKey, onstream)
     } else {
-      stream = hypercoreProtocol(streamOpts)
-      stream.once('feed', discoveryKey => {
+      replicationStream = hypercoreProtocol(streamOpts)
+      proxy.setReadable(replicationStream)
+      proxy.setWritable(replicationStream)
+      replicationStream.once('feed', discoveryKey => {
         dkeyString = datEncoding.encode(discoveryKey)
-        createStream(discoveryKey, stream)
+        createStream(discoveryKey, replicationStream, onstream)
       })
     }
 
-    pump(socket, stream, socket, err => {
+    pump(socket, proxy, socket, err => {
       if (err) self.emit('replication-error', err)
       return onclose()
     })
 
+    function onstream (err) {
+      if (err) return proxy.destroy(err)
+      if (proxy.destroyed) return
+      if (discoveryKey) {
+        proxy.setReadable(replicationStream)
+        proxy.setWritable(replicationStream)
+      }
+    }
+
     function onclose () {
       if (!streams) return
-      const idx = streams.indexOf(stream)
+      const idx = streams.indexOf(replicationStream)
       if (idx !== -1) streams.splice(idx, 1)
     }
 
-    function createStream (discoveryKey, stream) {
+    function createStream (discoveryKey, stream, cb) {
+      if (typeof stream === 'function') return createStream(discoveryKey, null, stream)
+
       const keyString = datEncoding.encode(discoveryKey)
-
-      const replicate = self._replicators.get(keyString)
       streams = self._replicationStreams.get(keyString)
-      if (!replicate || !streams) throw new Error('The swarm requested a discovery key which is not being seeded.')
+      if (!self._replicatorFactory) return cb(new Error('The replicator factory must be set prior to announcing.'))
 
-      const innerStream = replicate({ ...streamOpts, stream })
-      streams.push(stream || innerStream)
+      return self._replicatorFactory(keyString)
+        .then(replicate => {
+          if (!replicate || !streams) return cb(new Error('The swarm requested a discovery key which is not being seeded.'))
 
-      return innerStream
+          const innerStream = replicate({ ...streamOpts, stream })
+          replicationStream = stream || innerStream
+          streams.push(replicationStream)
+
+          return cb(null)
+        })
+      .catch(cb)
     }
   }
 
-  seed (discoveryKey, replicate) {
-    const keyString = datEncoding.encode(discoveryKey)
-    const streams = []
+  setReplicatorFactory (replicatorFactory) {
+    this._replicatorFactory = replicatorFactory
+  }
 
+  seed (discoveryKey) {
+    const keyString = datEncoding.encode(discoveryKey)
+    var streams = this._replicationStreams.get(keyString)
+    if (streams && streams.length) return
+
+    streams = []
     this._replicationStreams.set(keyString, streams)
-    this._replicators.set(keyString, replicate)
 
     this._swarm.join(discoveryKey, {
       announce: true,
@@ -99,12 +124,11 @@ class SwarmNetworker extends EventEmitter {
     }
 
     this._replicationStreams.delete(keyString)
-    this._replicators.delete(keyString)
   }
 
   async close () {
     return new Promise(resolve => {
-      for (let [dkey,] of new Map(...[this._replicators])) {
+      for (let [dkey,] of new Map(...[this._replicationStreams])) {
         this.unseed(datEncoding.decode(dkey))
       }
       this._swarm.discovery.destroy()
