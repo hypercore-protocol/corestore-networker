@@ -30,10 +30,9 @@ class SwarmNetworker extends EventEmitter {
   _createReplicationStream (discoveryKey, socket) {
     const self = this
 
-    // TODO: Support encrypted replication streams.
     const streamOpts = {
       live: true,
-      encrypt: false,
+      encrypt: true,
       id: this.id
     }
     var streams
