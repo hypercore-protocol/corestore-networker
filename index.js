@@ -32,9 +32,10 @@ class SwarmNetworker extends EventEmitter {
 
     const streamOpts = {
       live: true,
-      encrypt: true,
-      id: this.id
+      encrypt: false,
+      id: this.id,
     }
+
     var streams
     var replicationStream
     const proxy = duplexify()
