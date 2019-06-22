@@ -4,7 +4,7 @@ const { pipeline } = require('stream')
 
 const datEncoding = require('dat-encoding')
 const hypercoreProtocol = require('hypercore-protocol')
-const hyperswarm = require('@hyperswarm/network')
+const hyperswarm = require('hyperswarm')
 const duplexify = require('duplexify')
 const pump = require('pump')
 
@@ -33,7 +33,7 @@ class SwarmNetworker extends EventEmitter {
     const streamOpts = {
       live: true,
       encrypt: false,
-      id: this.id,
+      id: this.id
     }
 
     var streams
@@ -113,6 +113,7 @@ class SwarmNetworker extends EventEmitter {
   }
 
   unseed (discoveryKey) {
+    if (typeof discoveryKey === 'string') discoveryKey = Buffer.from(discoveryKey, 'hex')
     this._swarm.leave(discoveryKey)
 
     const keyString = datEncoding.encode(discoveryKey)
@@ -127,13 +128,14 @@ class SwarmNetworker extends EventEmitter {
   }
 
   async close () {
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
       for (let [dkey,] of new Map(...[this._replicationStreams])) {
         this.unseed(datEncoding.decode(dkey))
       }
-      this._swarm.discovery.destroy()
-      this._swarm.server.close()
-      return resolve()
+      this._swarm.destroy(err => {
+        if (err) return reject(err)
+        return resolve()
+      })
     })
   }
 }
