@@ -1,6 +1,6 @@
 {
   "name": "megastore-swarm-networking",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A Megastore networker based on discovery-swarm ",
   "main": "index.js",
   "dependencies": {
