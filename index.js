@@ -99,6 +99,8 @@ class SwarmNetworker extends EventEmitter {
   }
 
   seed (discoveryKey) {
+    if (this._swarm.destroyed) return
+
     const keyString = datEncoding.encode(discoveryKey)
     var streams = this._replicationStreams.get(keyString)
     if (streams && streams.length) return
@@ -113,6 +115,8 @@ class SwarmNetworker extends EventEmitter {
   }
 
   unseed (discoveryKey) {
+    if (this._swarm.destroyed) return
+
     if (typeof discoveryKey === 'string') discoveryKey = Buffer.from(discoveryKey, 'hex')
     this._swarm.leave(discoveryKey)
 
