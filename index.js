@@ -81,11 +81,15 @@ class SwarmNetworker extends EventEmitter {
       if (!self._replicatorFactory) return cb(new Error('The replicator factory must be set prior to announcing.'))
 
       return self._replicatorFactory(keyString)
-        .then(replicate => {
-          if (!replicate || !streams) return cb(new Error('The swarm requested a discovery key which is not being seeded.'))
+        .then(replicators => {
+          if (!replicators.length || !streams) return cb(new Error('The swarm requested a discovery key which is not being seeded.'))
 
-          const innerStream = replicate({ ...streamOpts, stream })
-          replicationStream = stream || innerStream
+          for (const replicate of replicators) {
+            const innerStream = replicate({ ...streamOpts, stream })
+            stream = stream || innerStream
+            replicationStream = stream || innerStream
+          }
+
           streams.push(replicationStream)
 
           return cb(null)
