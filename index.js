@@ -23,6 +23,7 @@ class SwarmNetworker extends EventEmitter {
     this._swarm.on('error', err => this.emit('error', err))
     this._swarm.on('connection', (socket, details) => {
       const discoveryKey = details.peer ? details.peer.topic : null
+      console.log('GOT CONNECTION WITH DKEY:', discoveryKey)
       this._createReplicationStream(discoveryKey, socket)
     })
 
@@ -119,10 +120,11 @@ class SwarmNetworker extends EventEmitter {
 
     const keyString = datEncoding.encode(discoveryKey)
     var streams = this._replicationStreams.get(keyString)
-    if (streams && streams.length) return
 
-    streams = []
-    this._replicationStreams.set(keyString, streams)
+    if (!streams) {
+      streams = []
+      this._replicationStreams.set(keyString, streams)
+    }
 
     this._swarm.join(discoveryKey, {
       announce: true,
