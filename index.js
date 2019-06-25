@@ -23,7 +23,7 @@ class SwarmNetworker extends EventEmitter {
     this._swarm.on('error', err => this.emit('error', err))
     this._swarm.on('connection', (socket, details) => {
       const discoveryKey = details.peer ? details.peer.topic : null
-      console.log('GOT CONNECTION WITH DKEY:', discoveryKey)
+      console.error('GOT CONNECTION WITH DKEY:', discoveryKey)
       this._createReplicationStream(discoveryKey, socket)
     })
 
@@ -45,7 +45,7 @@ class SwarmNetworker extends EventEmitter {
       var dkeyString = datEncoding.encode(discoveryKey)
       createStream(discoveryKey, onstream)
     } else {
-      replicationStream = hypercoreProtocol(this._streamOpts)
+      replicationStream = hypercoreProtocol({ ...this._streamOpts })
       proxy.setReadable(replicationStream)
       proxy.setWritable(replicationStream)
       replicationStream.once('feed', discoveryKey => {
@@ -96,18 +96,22 @@ class SwarmNetworker extends EventEmitter {
     }
   }
 
-  injectCore (core, dkey) {
-    const streams = this._replicationStreams.get(dkey)
-    if (!streams) return
-    for (const stream of streams) {
-      // if (mainStream.has(core.key)) return
-      for (const feed of stream.feeds) { // TODO: expose mainStream.has(key) instead
-        var skip = false
-        if (feed.peer.feed === core) skip = true
+  // TODO: Injecting the core into the streams for all discoverable keys is expensive.
+  injectCore (core, dkeys) {
+    for (const dkey of dkeys) {
+      const streams = this._replicationStreams.get(dkey)
+      console.error('IN INJECT CORE FOR DKEY:', dkey, 'streams:', streams && streams.length)
+      if (!streams) return
+      for (const stream of streams) {
+        // if (mainStream.has(core.key)) return
+        for (const feed of stream.feeds) { // TODO: expose mainStream.has(key) instead
+          var skip = false
+          if (feed.peer.feed === core) skip = true
+        }
+        if (skip) continue
+        console.log('INJECTING CORE HERE')
+        core.replicate({ ...this._streamOpts, stream })
       }
-      if (skip) continue
-      console.log('INJECTING CORE HERE')
-      core.replicate({ ...this._streamOpts, stream })
     }
   }
 
@@ -116,6 +120,7 @@ class SwarmNetworker extends EventEmitter {
   }
 
   seed (discoveryKey) {
+    console.error('this._swarm.destroyed?', this._swarm.destroyed)
     if (this._swarm.destroyed) return
 
     const keyString = datEncoding.encode(discoveryKey)
@@ -126,6 +131,7 @@ class SwarmNetworker extends EventEmitter {
       this._replicationStreams.set(keyString, streams)
     }
 
+    console.error('SWARM ACTUALLY JOINING WITH KEY:', discoveryKey)
     this._swarm.join(discoveryKey, {
       announce: true,
       lookup: true
