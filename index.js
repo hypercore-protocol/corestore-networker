@@ -25,16 +25,16 @@ class SwarmNetworker extends EventEmitter {
       const discoveryKey = details.peer ? details.peer.topic : null
       this._createReplicationStream(discoveryKey, socket)
     })
-  }
 
-  _createReplicationStream (discoveryKey, socket) {
-    const self = this
-
-    const streamOpts = {
+    this._streamOpts = {
       live: true,
       encrypt: false,
       id: this.id
     }
+  }
+
+  _createReplicationStream (discoveryKey, socket) {
+    const self = this
 
     var streams
     var replicationStream
@@ -44,7 +44,7 @@ class SwarmNetworker extends EventEmitter {
       var dkeyString = datEncoding.encode(discoveryKey)
       createStream(discoveryKey, onstream)
     } else {
-      replicationStream = hypercoreProtocol(streamOpts)
+      replicationStream = hypercoreProtocol(this._streamOpts)
       proxy.setReadable(replicationStream)
       proxy.setWritable(replicationStream)
       replicationStream.once('feed', discoveryKey => {
@@ -81,20 +81,32 @@ class SwarmNetworker extends EventEmitter {
       if (!self._replicatorFactory) return cb(new Error('The replicator factory must be set prior to announcing.'))
 
       return self._replicatorFactory(keyString)
-        .then(replicators => {
-          if (!replicators.length || !streams) return cb(new Error('The swarm requested a discovery key which is not being seeded.'))
+        .then(replicate => {
+          console.log('replicate', !!replicate, 'streams:', !!streams)
+          if (!replicate || !streams) return cb(new Error('The swarm requested a discovery key which is not being seeded.'))
 
-          for (const replicate of replicators) {
-            const innerStream = replicate({ ...streamOpts, stream })
-            stream = stream || innerStream
-            replicationStream = stream || innerStream
-          }
-
+          const innerStream = replicate({ ...self._streamOpts, stream })
+          replicationStream = stream || innerStream
           streams.push(replicationStream)
 
           return cb(null)
         })
       .catch(cb)
+    }
+  }
+
+  injectCore (core, dkey) {
+    const streams = this._replicationStreams.get(dkey)
+    if (!streams) return
+    for (const stream of streams) {
+      // if (mainStream.has(core.key)) return
+      for (const feed of stream.feeds) { // TODO: expose mainStream.has(key) instead
+        var skip = false
+        if (feed.peer.feed === core) skip = true
+      }
+      if (skip) continue
+      console.log('INJECTING CORE HERE')
+      core.replicate({ ...this._streamOpts, stream })
     }
   }
 
