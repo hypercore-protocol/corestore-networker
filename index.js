@@ -98,10 +98,11 @@ class SwarmNetworker extends EventEmitter {
 
   // TODO: Injecting the core into the streams for all discoverable keys is expensive.
   injectCore (core, dkeys) {
+    console.error('ALL DISCOVERABLE KEYS:', dkeys)
     for (const dkey of dkeys) {
       const streams = this._replicationStreams.get(dkey)
       console.error('IN INJECT CORE FOR DKEY:', dkey, 'streams:', streams && streams.length)
-      if (!streams) return
+      if (!streams) continue
       for (const stream of streams) {
         // if (mainStream.has(core.key)) return
         for (const feed of stream.feeds) { // TODO: expose mainStream.has(key) instead
