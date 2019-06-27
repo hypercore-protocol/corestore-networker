@@ -21,6 +21,7 @@ class SwarmNetworker extends EventEmitter {
 
   _handleConnection (socket, details) {
     var discoveryKey = details.peer ? details.peer.topic : null
+    console.error('##### GOT CONNECTION:', discoveryKey)
     if (discoveryKey) {
       discoveryKey = datEncoding.encode(discoveryKey)
       if (!this._seeding.has(discoveryKey)) {
@@ -29,14 +30,13 @@ class SwarmNetworker extends EventEmitter {
     }
     console.log('CALLING REPLICATE WITH DKEY:', discoveryKey)
     const stream = this.megastore.replicate(discoveryKey)
-    if (discoveryKey) {
-      this._addStream(discoveryKey, stream)
-    } else {
-      stream.on('feed', dkey => {
-        const keyString = datEncoding.encode(dkey)
-        this._addStream(keyString, stream)
-      })
-    }
+
+    if (discoveryKey) this._addStream(discoveryKey, stream)
+    stream.on('feed', dkey => {
+      const keyString = datEncoding.encode(dkey)
+      this._addStream(keyString, stream)
+    })
+
     pump(socket, stream, socket, err => {
       if (err) this.emit('replication-error', err)
     })
