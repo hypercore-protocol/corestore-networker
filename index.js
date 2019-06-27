@@ -29,7 +29,14 @@ class SwarmNetworker extends EventEmitter {
     }
     console.log('CALLING REPLICATE WITH DKEY:', discoveryKey)
     const stream = this.megastore.replicate(discoveryKey)
-    this._addStream(discoveryKey, stream)
+    if (discoveryKey) {
+      this._addStream(discoveryKey, stream)
+    } else {
+      stream.on('feed', dkey => {
+        const keyString = datEncoding.encode(dkey)
+        this._addStream(keyString, stream)
+      })
+    }
     pump(socket, stream, socket, err => {
       if (err) this.emit('replication-error', err)
     })
@@ -91,7 +98,7 @@ class SwarmNetworker extends EventEmitter {
     const streams = this._replicationStreams.get(keyString)
     if (!streams || !streams.length) return
 
-    for (let stream of streams) {
+    for (let stream of [...streams]) {
       stream.destroy()
     }
 
