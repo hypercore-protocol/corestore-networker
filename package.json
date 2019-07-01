@@ -1,7 +1,7 @@
 {
-  "name": "megastore-swarm-networking",
-  "version": "1.0.3",
-  "description": "A Megastore networker based on discovery-swarm ",
+  "name": "corestore-swarm-networking",
+  "version": "1.0.0",
+  "description": "A corestore networker based on hyperswarm ",
   "main": "index.js",
   "dependencies": {
     "dat-encoding": "^5.0.1",
