@@ -20,16 +20,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/andrewosh/megastore-swarm-networking.git"
+    "url": "git+https://github.com/andrewosh/corestore-swarm-networking.git"
   },
   "keywords": [
-    "megastore",
-    "discovery-swarm"
+    "corestore",
+    "hyperswarm"
   ],
   "author": "Andrew Osheroff <andrewosh@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/andrewosh/megastore-swarm-networking/issues"
+    "url": "https://github.com/andrewosh/corestore-swarm-networking/issues"
   },
-  "homepage": "https://github.com/andrewosh/megastore-swarm-networking#readme"
+  "homepage": "https://github.com/andrewosh/corestore-swarm-networking#readme"
 }
