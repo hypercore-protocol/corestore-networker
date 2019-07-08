@@ -1,3 +1,4 @@
+const crypto = require('crypto')
 const { EventEmitter } = require('events')
 
 const datEncoding = require('dat-encoding')
@@ -7,10 +8,18 @@ const pump = require('pump')
 const log = require('debug')('corestore:network')
 
 class SwarmNetworker extends EventEmitter {
-  constructor (megastore, opts = {}) {
+  constructor (corestore, opts = {}) {
     super()
-    this.megastore = megastore
+    this.corestore = corestore
+    this.id = opts.id || crypto.randomBytes(32)
     this.opts = opts
+
+    this._replicationOpts = {
+      // TODO: Re-enable once the capability system is in place.
+      id: this.id,
+      encrypt: false,
+      live: true
+    }
 
     this._seeding = new Set()
     this._replicationStreams = new Map()
@@ -21,15 +30,13 @@ class SwarmNetworker extends EventEmitter {
 
   _handleConnection (socket, details) {
     var discoveryKey = details.peer ? details.peer.topic : null
-    console.error('##### GOT CONNECTION:', discoveryKey)
     if (discoveryKey) {
       discoveryKey = datEncoding.encode(discoveryKey)
       if (!this._seeding.has(discoveryKey)) {
         return socket.destroy(new Error('Networker is not seeding: ' + discoveryKey))
       }
     }
-    console.log('CALLING REPLICATE WITH DKEY:', discoveryKey)
-    const stream = this.megastore.replicate(discoveryKey)
+    const stream = this.corestore.replicate(discoveryKey, { ...this._replicationOpts })
 
     if (discoveryKey) this._addStream(discoveryKey, stream)
     stream.on('feed', dkey => {
@@ -37,7 +44,7 @@ class SwarmNetworker extends EventEmitter {
       this._addStream(keyString, stream)
     })
 
-    pump(socket, stream, socket, err => {
+    return pump(socket, stream, socket, err => {
       if (err) this.emit('replication-error', err)
     })
   }
@@ -77,7 +84,6 @@ class SwarmNetworker extends EventEmitter {
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
 
-    console.error('SWARM JOINING WITH KEY:', discoveryKey)
     this._seeding.add(keyString)
     this._swarm.join(keyBuf, {
       announce: true,
