@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const { EventEmitter } = require('events')
 
 const datEncoding = require('dat-encoding')
+const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
 const pump = require('pump')
 
@@ -15,9 +16,8 @@ class SwarmNetworker extends EventEmitter {
     this.opts = opts
 
     this._replicationOpts = {
-      // TODO: Re-enable once the capability system is in place.
       id: this.id,
-      encrypt: false,
+      encrypt: true,
       live: true
     }
 
@@ -29,20 +29,26 @@ class SwarmNetworker extends EventEmitter {
   }
 
   _handleConnection (socket, details) {
+    const isInitiator = !!details.client
     var discoveryKey = details.peer ? details.peer.topic : null
-    if (discoveryKey) {
-      discoveryKey = datEncoding.encode(discoveryKey)
-      if (!this._seeding.has(discoveryKey)) {
-        return socket.destroy(new Error('Networker is not seeding: ' + discoveryKey))
-      }
-    }
-    const stream = this.corestore.replicate(discoveryKey, { ...this._replicationOpts })
+    var stream = null
 
-    if (discoveryKey) this._addStream(discoveryKey, stream)
-    stream.on('feed', dkey => {
-      const keyString = datEncoding.encode(dkey)
-      this._addStream(keyString, stream)
-    })
+    if (isInitiator) {
+      // This is the active replication case -- we're requesting that a particular discovery key be replicated.
+      const dkeyString = datEncoding.encode(discoveryKey)
+      if (!this._seeding.has(dkeyString)) {
+        return socket.destroy(new Error('Networker is not seeding: ' + dkeyString))
+      }
+      stream = this.corestore.replicate(true, discoveryKey, { ...this._replicationOpts })
+      this._addStream(dkeyString, stream)
+    } else {
+      // This is the passive replication case -- we need to wait for the active peer to create a channel.
+      stream = new HypercoreProtocol(false)
+      stream.once('discovery-key', dkey => {
+        this.corestore.replicate(false, dkey, { ...this._replicationOpts, stream })
+        this._addStream(datEncoding.encode(dkey), stream)
+      })
+    }
 
     return pump(socket, stream, socket, err => {
       if (err) this.emit('replication-error', err)

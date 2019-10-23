@@ -7,15 +7,18 @@
     "dat-encoding": "^5.0.1",
     "dat-swarm-defaults": "^1.0.2",
     "duplexify": "^4.0.0",
-    "hypercore-protocol": "^6.11.0",
-    "hyperswarm": "^2.0.2",
+    "hypercore-protocol": "^7.6.0",
+    "hyperswarm": "^2.2.0",
     "pump": "^3.0.0"
   },
   "devDependencies": {
-    "standard": "^12.0.1"
+    "corestore": "^4.0.6",
+    "random-access-memory": "^3.1.1",
+    "standard": "^12.0.1",
+    "tape": "^4.9.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tape test/*.js"
   },
   "repository": {
     "type": "git",
