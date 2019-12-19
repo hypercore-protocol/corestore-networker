@@ -25,30 +25,21 @@ class SwarmNetworker extends EventEmitter {
 
     this._seeding = new Set()
     this._replicationStreams = []
-    this._streamsByDiscoveryKey = new Map()
 
     // Set in listen
     this._swarm = null
   }
 
-  _handleTopic (protocolStream, discoveryKey) {
-    // This is the active replication case -- we're requesting that a particular discovery key be replicated.
-    const dkeyString = datEncoding.encode(discoveryKey)
-    if (!this._seeding.has(dkeyString)) return
+  _replicate (protocolStream) {
     // The initiator parameter here is ignored, since we're passing in a stream.
-    this.corestore.replicate(false, discoveryKey, {
+    this.corestore.replicate(false, {
       ...this._replicationOpts,
-      stream: protocolStream
+      stream: protocolStream,
     })
-    var discoveryKeyStreams = this._streamsByDiscoveryKey.get(dkeyString)
-    if (!discoveryKeyStreams) {
-      discoveryKeyStreams = []
-      this._streamsByDiscoveryKey.set(dkeyString, discoveryKeyStreams)
-    }
-    discoveryKeyStreams.push(protocolStream)
   }
 
   listen () {
+    const self = this
     this._swarm = hyperswarm({
       ...this.opts,
       queue: { multiplex: true }
@@ -58,30 +49,23 @@ class SwarmNetworker extends EventEmitter {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
 
-      const protocolStream = new HypercoreProtocol(isInitiator, {
-        onchannelclose: (discoveryKey) => {
-          const dkeyString = datEncoding.encode(discoveryKey)
-          const streams = this._streamsByDiscoveryKey.get(dkeyString)
-          if (!streams || !streams.length) return
-          streams.splice(streams.indexOf(protocolStream), 1)
-          if (!streams.length) this._streamsByDiscoveryKey.delete(dkeyString)
-        },
-        ondiscoverykey: (discoveryKey) => {
-          this._handleTopic(protocolStream, discoveryKey)
-        }
+      const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
+      protocolStream.on('handshake', () => {
+        const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
+        if (deduped) return
+        onhandshake()
       })
-      this._replicationStreams.push(protocolStream)
 
-      for (const discoveryKey of info.topics) {
-        this._handleTopic(protocolStream, discoveryKey)
+      function onhandshake () {
+        self._replicate(protocolStream)
+        self._replicationStreams.push(protocolStream)
       }
-      info.on('topic', discoveryKey => {
-        this._handleTopic(protocolStream, discoveryKey)
-      })
 
       return pump(socket, protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
-        this._replicationStreams.splice(this._replicationStreams.indexOf(protocolStream), 1)
+        const idx = this._replicationStreams.indexOf(protocolStream)
+        if (idx === -1) return
+        this._replicationStreams.splice(idx, 1)
       })
     })
   }
@@ -110,14 +94,9 @@ class SwarmNetworker extends EventEmitter {
     this._seeding.delete(keyString)
     this._swarm.leave(keyBuf)
 
-    const streams = this._streamsByDiscoveryKey.get(keyString)
-    if (!streams || !streams.length) return
-
-    for (let stream of [...streams]) {
+    for (let stream of this._replicationStreams) {
       stream.close(keyBuf)
     }
-
-    this._streamsByDiscoveryKey.delete(keyString)
   }
 
   async close () {
