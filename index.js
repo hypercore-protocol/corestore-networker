@@ -20,7 +20,8 @@ class SwarmNetworker extends EventEmitter {
     this._replicationOpts = {
       id: this.id,
       encrypt: true,
-      live: true
+      live: true,
+      keyPair: opts.keyPair
     }
 
     this._seeding = new Set()
@@ -38,7 +39,7 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
-  listen () {
+  listen (opts = {}) {
     const self = this
     this._swarm = hyperswarm({
       ...this.opts,
@@ -49,7 +50,7 @@ class SwarmNetworker extends EventEmitter {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
 
-      const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
+      const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts, ...opts })
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
         if (deduped) return
