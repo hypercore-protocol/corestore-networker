@@ -56,18 +56,22 @@ class SwarmNetworker extends EventEmitter {
         if (deduped) return
         onhandshake()
       })
+      protocolStream.on('close', () => {
+        this.emit('stream-closed', protocolStream)
+      })
 
       function onhandshake () {
         self._replicate(protocolStream)
         self._replicationStreams.push(protocolStream)
       }
 
-      return pump(socket, protocolStream, socket, err => {
+      pump(socket, protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
         const idx = this._replicationStreams.indexOf(protocolStream)
         if (idx === -1) return
         this._replicationStreams.splice(idx, 1)
       })
+      this.emit('stream-opened', protocolStream)
     })
   }
 
