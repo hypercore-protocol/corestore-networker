@@ -21,7 +21,7 @@ class SwarmNetworker extends EventEmitter {
       id: this.id,
       encrypt: true,
       live: true,
-      keyPair: opts.keyPair
+      keyPair: opts.keyPair || HypercoreProtocol.keyPair()
     }
 
     this._seeding = new Set()
@@ -41,6 +41,8 @@ class SwarmNetworker extends EventEmitter {
 
   listen (opts = {}) {
     const self = this
+    if (this._swarm) return
+
     this._swarm = hyperswarm({
       ...this.opts,
       queue: { multiplex: true }
@@ -63,6 +65,7 @@ class SwarmNetworker extends EventEmitter {
       function onhandshake () {
         self._replicate(protocolStream)
         self._replicationStreams.push(protocolStream)
+        self.emit('handshake', protocolStream)
       }
 
       pump(socket, protocolStream, socket, err => {
