@@ -52,21 +52,24 @@ class SwarmNetworker extends EventEmitter {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
 
+      // We block all the corestore's ifAvailable guards until the connection's handshake has succeeded or the stream closes.
+      let handshaking = true
+      this.corestore.guard.wait()
+
       const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts, ...opts })
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
-        if (deduped) return
+        if (deduped) {
+          console.log('deduped')
+          ifAvailableContinue()
+          return
+        }
         onhandshake()
       })
       protocolStream.on('close', () => {
         this.emit('stream-closed', protocolStream)
+        ifAvailableContinue()
       })
-
-      function onhandshake () {
-        self._replicate(protocolStream)
-        self._replicationStreams.push(protocolStream)
-        self.emit('handshake', protocolStream)
-      }
 
       pump(socket, protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
@@ -74,21 +77,48 @@ class SwarmNetworker extends EventEmitter {
         if (idx === -1) return
         this._replicationStreams.splice(idx, 1)
       })
+
       this.emit('stream-opened', protocolStream)
+
+      function onhandshake () {
+        console.log('handshake complete!')
+        self._replicate(protocolStream)
+        self._replicationStreams.push(protocolStream)
+        self.emit('handshake', protocolStream)
+        ifAvailableContinue()
+      }
+
+      function ifAvailableContinue () {
+        if (handshaking) {
+          handshaking = false
+          self.corestore.guard.continue()
+        }
+      }
     })
   }
 
-  seed (discoveryKey, opts = {}) {
+  async seed (discoveryKey, opts = {}) {
     if (!this._swarm) throw new Error('Seed can only be called after the swarm is created.')
-    if (this._swarm.destroyed) return
+    if (this._swarm.destroyed) return null
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
 
     this._seeding.add(keyString)
-    this._swarm.join(keyBuf, {
-      announce: opts.announce !== false,
-      lookup: opts.lookup !== false
+    return new Promise((resolve, reject) => {
+      this._swarm.join(keyBuf, {
+        announce: opts.announce !== false,
+        lookup: opts.lookup !== false
+      }, err => {
+        if (err) return reject(err)
+        if (opts.flush !== false) {
+          return this._swarm.flush(err => {
+            if (err) return reject(err)
+            return resolve(null)
+          })
+        }
+        return resolve(null)
+      })
     })
   }
 
