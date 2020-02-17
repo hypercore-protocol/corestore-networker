@@ -60,7 +60,6 @@ class SwarmNetworker extends EventEmitter {
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
         if (deduped) {
-          console.log('deduped')
           ifAvailableContinue()
           return
         }
@@ -81,7 +80,6 @@ class SwarmNetworker extends EventEmitter {
       this.emit('stream-opened', protocolStream)
 
       function onhandshake () {
-        console.log('handshake complete!')
         self._replicate(protocolStream)
         self._replicationStreams.push(protocolStream)
         self.emit('handshake', protocolStream)
