@@ -1,6 +1,6 @@
 {
   "name": "corestore-swarm-networking",
-  "version": "4.0.3",
+  "version": "4.0.4",
   "description": "A corestore networker based on hyperswarm ",
   "main": "index.js",
   "dependencies": {
