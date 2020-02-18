@@ -36,5 +36,16 @@ await networker.close()
 
 ### API
 
+#### `const networker = new SwarmNetworker(corestore, networkingOptions = {})`
+Creates a new SwarmNetworker that will open replication streams on the `corestore` instance argument.
+
+`networkOpts` is an options map that can include all [hyperswarm](https://github.com/hyperswarm/hyperswarm) options as well as:
+```js
+{
+  id: crypto.randomBytes(32), // A randomly-generated peer ID,
+  keyPair: HypercoreProtocol.keyPair(), // A NOISE keypair that's used across all connections.
+}
+```
+
 ### License
 MIT
