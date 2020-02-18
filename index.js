@@ -123,7 +123,7 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
-  leave (discoveryKey) {
+  async leave (discoveryKey) {
     if (this.swarm && this.swarm.destroyed) return
     if (!this.swarm) {
       this._listen()
@@ -134,7 +134,12 @@ class SwarmNetworker extends EventEmitter {
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
 
     this._seeding.delete(keyString)
-    this.swarm.leave(keyBuf)
+    await new Promise((resolve, reject) => {
+      this.swarm.leave(keyBuf, err => {
+        if (err) return reject(err)
+        return resolve()
+      })
+    })
 
     for (let stream of this._replicationStreams) {
       stream.close(keyBuf)
