@@ -1,9 +1,13 @@
 const test = require('tape')
 const ram = require('random-access-memory')
+const dht = require('@hyperswarm/dht')
 const HypercoreProtocol = require('hypercore-protocol')
 const Corestore = require('corestore')
 
 const SwarmNetworker = require('..')
+
+const BOOTSTRAP_PORT = 3100
+var bootstrap = null
 
 test('simple replication', async t => {
   const { store: store1, networker: networker1 } = await create()
@@ -12,8 +16,8 @@ test('simple replication', async t => {
   const core1 = await store1.get()
   const core2 = await store2.get(core1.key)
 
-  networker1.seed(core1.discoveryKey)
-  networker2.seed(core2.discoveryKey)
+  await networker1.join(core1.discoveryKey)
+  await networker2.join(core2.discoveryKey)
 
   await append(core1, 'hello')
   const data = await get(core2, 0)
@@ -32,10 +36,10 @@ test('replicate multiple top-level cores', async t => {
   const core3 = await store2.get(core1.key)
   const core4 = await store2.get(core2.key)
 
-  networker1.seed(core1.discoveryKey)
-  networker1.seed(core2.discoveryKey)
-  networker2.seed(core2.discoveryKey)
-  networker2.seed(core3.discoveryKey)
+  await networker1.join(core1.discoveryKey)
+  await networker1.join(core2.discoveryKey)
+  await networker2.join(core2.discoveryKey)
+  await networker2.join(core3.discoveryKey)
 
   await append(core1, 'hello')
   await append(core2, 'world')
@@ -57,9 +61,9 @@ test('replicate to multiple receivers', async t => {
   const core2 = await store2.get(core1.key)
   const core3 = await store3.get(core1.key)
 
-  networker1.seed(core1.discoveryKey)
-  networker2.seed(core2.discoveryKey)
-  networker3.seed(core3.discoveryKey)
+  await networker1.join(core1.discoveryKey)
+  await networker2.join(core2.discoveryKey)
+  await networker3.join(core3.discoveryKey)
 
   await append(core1, 'hello')
   const d1 = await get(core2, 0)
@@ -78,8 +82,8 @@ test('replicate sub-cores', async t => {
   const core1 = await store1.get()
   const core3 = await store2.get(core1.key)
 
-  networker1.seed(core1.discoveryKey)
-  networker2.seed(core3.discoveryKey)
+  await networker1.join(core1.discoveryKey)
+  await networker2.join(core3.discoveryKey)
 
   const core2 = await store1.get({ parents: [core1.key] })
   const core4 = await store2.get({ key: core2.key, parents: [core3.key]})
@@ -104,8 +108,8 @@ test('can replication with a custom keypair', async t => {
   const core1 = await store1.get()
   const core3 = await store2.get(core1.key)
 
-  networker1.seed(core1.discoveryKey)
-  networker2.seed(core3.discoveryKey)
+  await networker1.join(core1.discoveryKey)
+  await networker2.join(core3.discoveryKey)
 
   const core2 = await store1.get()
   const core4 = await store2.get({ key: core2.key })
@@ -131,10 +135,18 @@ test.skip('each corestore only opens one connection per peer', async t => {
 })
 
 async function create (opts = {}) {
+  if (!bootstrap) {
+    bootstrap = dht({
+      bootstrap: false
+    })
+    bootstrap.listen(BOOTSTRAP_PORT)
+    await new Promise(resolve => {
+      return bootstrap.once('listening', resolve)
+    })
+  }
   const store =  new Corestore(ram)
   await store.ready()
-  const networker = new SwarmNetworker(store, { bootstrap: false })
-  networker.listen(opts)
+  const networker = new SwarmNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
   return { store, networker }
 }
 
@@ -159,5 +171,9 @@ function get (core, idx, opts = {}) {
 async function cleanup (networkers) {
   for (let networker of networkers) {
     await networker.close()
+  }
+  if (bootstrap) {
+    await bootstrap.destroy()
+    bootstrap = null
   }
 }

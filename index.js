@@ -28,7 +28,7 @@ class SwarmNetworker extends EventEmitter {
     this._replicationStreams = []
 
     // Set in listen
-    this._swarm = null
+    this.swarm = null
   }
 
   _replicate (protocolStream) {
@@ -39,16 +39,16 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
-  listen (opts = {}) {
+  _listen () {
     const self = this
-    if (this._swarm) return
+    if (this.swarm) return
 
-    this._swarm = hyperswarm({
+    this.swarm = hyperswarm({
       ...this.opts,
       queue: { multiplex: true }
     })
-    this._swarm.on('error', err => this.emit('error', err))
-    this._swarm.on('connection', (socket, info) => {
+    this.swarm.on('error', err => this.emit('error', err))
+    this.swarm.on('connection', (socket, info) => {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
 
@@ -56,7 +56,7 @@ class SwarmNetworker extends EventEmitter {
       let handshaking = true
       this.corestore.guard.wait()
 
-      const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts, ...opts })
+      const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
         if (deduped) {
@@ -95,22 +95,25 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
-  async seed (discoveryKey, opts = {}) {
-    if (!this._swarm) throw new Error('Seed can only be called after the swarm is created.')
-    if (this._swarm.destroyed) return null
+  async join (discoveryKey, opts = {}) {
+    if (this.swarm && this.swarm.destroyed) return null
+    if (!this.swarm) {
+      this._listen()
+      return this.join(discoveryKey, opts)
+    }
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
 
     this._seeding.add(keyString)
     return new Promise((resolve, reject) => {
-      this._swarm.join(keyBuf, {
+      this.swarm.join(keyBuf, {
         announce: opts.announce !== false,
         lookup: opts.lookup !== false
       }, err => {
         if (err) return reject(err)
         if (opts.flush !== false) {
-          return this._swarm.flush(err => {
+          return this.swarm.flush(err => {
             if (err) return reject(err)
             return resolve(null)
           })
@@ -120,15 +123,18 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
-  unseed (discoveryKey) {
-    if (!this._swarm) throw new Error('Unseed can only be called after the swarm is created.')
-    if (this._swarm.destroyed) return
+  leave (discoveryKey) {
+    if (this.swarm && this.swarm.destroyed) return
+    if (!this.swarm) {
+      this._listen()
+      return this.leave(discoveryKey)
+    }
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
 
     this._seeding.delete(keyString)
-    this._swarm.leave(keyBuf)
+    this.swarm.leave(keyBuf)
 
     for (let stream of this._replicationStreams) {
       stream.close(keyBuf)
@@ -136,17 +142,17 @@ class SwarmNetworker extends EventEmitter {
   }
 
   async close () {
-    if (!this._swarm) return null
+    if (!this.swarm) return null
     return new Promise((resolve, reject) => {
       for (const dkey of [...this._seeding]) {
-        this.unseed(dkey)
+        this.leave(dkey)
       }
       for (const stream of this._replicationStreams) {
         stream.destroy()
       }
-      this._swarm.destroy(err => {
+      this.swarm.destroy(err => {
         if (err) return reject(err)
-        this._swarm = null
+        this.swarm = null
         return resolve()
       })
     })
