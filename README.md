@@ -22,13 +22,12 @@ const store = new Corestore(ram)
 await store.ready()
 
 const networker = new SwarmNetworker(store)
-networker.listen()
 
 // Start announcing or lookup up a discovery key on the DHT.
-await networker.seed(discoveryKey, { announce: true, lookup: true })
+await networker.join(discoveryKey, { announce: true, lookup: true })
 
 // Stop announcing or looking up a discovery key.
-networker.unseed(discoveryKey)
+networker.leave(discoveryKey)
 
 // Shut down the swarm (and unnanounce all keys)
 await networker.close()
@@ -39,13 +38,36 @@ await networker.close()
 #### `const networker = new SwarmNetworker(corestore, networkingOptions = {})`
 Creates a new SwarmNetworker that will open replication streams on the `corestore` instance argument.
 
-`networkOpts` is an options map that can include all [hyperswarm](https://github.com/hyperswarm/hyperswarm) options as well as:
+`networkOpts` is an options map that can include all [hyperswarm](https://github.com/hyperswarm/hyperswarm) options (which will be passed to the internal swarm instance) as well as:
 ```js
 {
   id: crypto.randomBytes(32), // A randomly-generated peer ID,
   keyPair: HypercoreProtocol.keyPair(), // A NOISE keypair that's used across all connections.
 }
 ```
+
+#### `await networker.join(discoveryKey, opts = {})`
+Join the swarm with the `discoveryKey` argument as the topic.
+
+If this is the first time a `join` or `leave` has been called, the swarm instance will be created automatically.
+
+Waits for the topic to be fully joined before resolving.
+
+`opts` is an options map of network configuration options that can include:
+```js
+  announce: true, // Announce the discovery key on the swarm
+  lookup: true  // Look up the discovery key on the swarm
+```
+
+#### `await networker.leave(discoveryKey)`
+Stop announcing or looking up the discovery key topic.
+
+Waits for the key to be fully unannounced before resolving.
+
+#### `await networker.close()`
+Shut down the swarm networker.
+
+This will close all replication streams and then destroy the swarm instance. It will wait for all topics to be unannounced, so it might take some time.
 
 ### License
 MIT
