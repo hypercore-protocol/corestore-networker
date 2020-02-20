@@ -5,6 +5,7 @@ const datEncoding = require('dat-encoding')
 const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
 const pump = require('pump')
+const eos = require('end-of-stream')
 
 const log = require('debug')('corestore:network')
 
@@ -35,7 +36,7 @@ class SwarmNetworker extends EventEmitter {
     // The initiator parameter here is ignored, since we're passing in a stream.
     this.corestore.replicate(false, {
       ...this._replicationOpts,
-      stream: protocolStream,
+      stream: protocolStream
     })
   }
 
@@ -103,7 +104,7 @@ class SwarmNetworker extends EventEmitter {
     }
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
-    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
+    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
 
     this._seeding.add(keyString)
     return new Promise((resolve, reject) => {
@@ -131,7 +132,7 @@ class SwarmNetworker extends EventEmitter {
     }
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
-    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey: datEncoding.decode(discoveryKey)
+    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
 
     this._seeding.delete(keyString)
     await new Promise((resolve, reject) => {
@@ -148,13 +149,19 @@ class SwarmNetworker extends EventEmitter {
 
   async close () {
     if (!this.swarm) return null
-    return new Promise((resolve, reject) => {
-      for (const dkey of [...this._seeding]) {
-        this.leave(dkey)
-      }
-      for (const stream of this._replicationStreams) {
+
+    const leaving = [...this._seeding].map(dkey => this.leave(dkey))
+    await Promise.all(leaving)
+
+    const closingStreams = this._replicationStreams.map(stream => {
+      return new Promise(resolve => {
         stream.destroy()
-      }
+        eos(stream, () => resolve())
+      })
+    })
+    await Promise.all(closingStreams)
+
+    return new Promise((resolve, reject) => {
       this.swarm.destroy(err => {
         if (err) return reject(err)
         this.swarm = null
