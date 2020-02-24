@@ -130,6 +130,17 @@ test('can replication with a custom keypair', async t => {
   t.end()
 })
 
+test('can destroy multiple times', async t => {
+  const { networker } = await create()
+
+  await networker.close()
+  await networker.close()
+  t.pass('closed successfully')
+
+  await cleanup([networker])
+  t.end()
+})
+
 test.skip('each corestore only opens one connection per peer', async t => {
   t.end()
 })
