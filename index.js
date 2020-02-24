@@ -5,7 +5,9 @@ const datEncoding = require('dat-encoding')
 const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
 const pump = require('pump')
+const pumpify = require('pumpify')
 const eos = require('end-of-stream')
+const LatencyStream = require('latency-stream')
 
 const log = require('debug')('corestore:network')
 
@@ -71,7 +73,9 @@ class SwarmNetworker extends EventEmitter {
         ifAvailableContinue()
       })
 
-      pump(socket, protocolStream, socket, err => {
+      const latencyStream = this.opts.latency ? pumpify(new LatencyStream([this.opts.latency, this.opts.latency]), protocolStream) : null
+
+      pump(socket, latencyStream || protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
         const idx = this._replicationStreams.indexOf(protocolStream)
         if (idx === -1) return

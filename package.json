@@ -10,7 +10,9 @@
     "end-of-stream": "^1.4.4",
     "hypercore-protocol": "^7.6.0",
     "hyperswarm": "^2.6.0",
-    "pump": "^3.0.0"
+    "latency-stream": "^1.0.0",
+    "pump": "^3.0.0",
+    "pumpify": "^2.0.1"
   },
   "devDependencies": {
     "corestore": "^5.0.0",

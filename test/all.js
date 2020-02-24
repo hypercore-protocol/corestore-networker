@@ -141,6 +141,53 @@ test('can destroy multiple times', async t => {
   t.end()
 })
 
+test('can replicate with added latency', async t => {
+  const { store: store1, networker: networker1 } = await create({ latency: 0 })
+  const { store: store2, networker: networker2 } = await create({ latency: 0 })
+
+  const core1 = await store1.get()
+  const core2 = await store2.get(core1.key)
+
+  await networker1.join(core1.discoveryKey)
+  await networker2.join(core2.discoveryKey)
+
+  await append(core1, 'hello')
+  const data = await get(core2, 0)
+  t.same(data, Buffer.from('hello'))
+
+  await cleanup([networker1, networker2])
+  t.end()
+})
+
+test.only('can replicate with added latency, many blocks', async t => {
+  const { store: store1, networker: networker1 } = await create({ latency: 0 })
+  const { store: store2, networker: networker2 } = await create({ latency: 0 })
+
+  const NUM_BLOCKS = 10
+
+  const core1 = await store1.get()
+  const core2 = await store2.get(core1.key)
+
+  networker2.once('handshake', onhandshake)
+  await networker1.join(core1.discoveryKey)
+  await networker2.join(core2.discoveryKey)
+
+  async function onhandshake () {
+    for (let i = 0; i < NUM_BLOCKS; i++) {
+      await append(core1, 'hello-' + i)
+    }
+    console.time('test')
+    for (let i = 0; i < NUM_BLOCKS; i++) {
+      const data = await get(core2, i)
+      t.same(data, Buffer.from('hello-' + i))
+    }
+    console.timeEnd('test')
+
+    await cleanup([networker1, networker2])
+    t.end()
+  }
+})
+
 test.skip('each corestore only opens one connection per peer', async t => {
   t.end()
 })
@@ -155,7 +202,7 @@ async function create (opts = {}) {
       return bootstrap.once('listening', resolve)
     })
   }
-  const store =  new Corestore(ram)
+  const store =  new Corestore(ram, { sparse: true })
   await store.ready()
   const networker = new SwarmNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
   return { store, networker }
