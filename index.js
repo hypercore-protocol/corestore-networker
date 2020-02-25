@@ -8,6 +8,7 @@ const pump = require('pump')
 const pumpify = require('pumpify')
 const eos = require('end-of-stream')
 const LatencyStream = require('latency-stream')
+const { Transform } = require('streamx')
 
 const log = require('debug')('corestore:network')
 
@@ -55,6 +56,10 @@ class SwarmNetworker extends EventEmitter {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
 
+      const remoteAddress = socket.remoteAddress
+      const address = socket.address()
+      console.log(this.id.toString('hex').slice(0, 4), 'socket info:', remoteAddress, address, 'client info:', info.client)
+
       // We block all the corestore's ifAvailable guards until the connection's handshake has succeeded or the stream closes.
       let handshaking = true
       this.corestore.guard.wait()
@@ -70,12 +75,25 @@ class SwarmNetworker extends EventEmitter {
       })
       protocolStream.on('close', () => {
         this.emit('stream-closed', protocolStream)
+        console.log('STREAM CLOSING HERE', 'remote address:', remoteAddress, 'address:', address)
         ifAvailableContinue()
       })
 
       const latencyStream = this.opts.latency ? pumpify(new LatencyStream([this.opts.latency, this.opts.latency]), protocolStream) : null
+      const readProbe = new Transform({
+        transform: (data, cb) => {
+          console.log(this.id.toString('hex').slice(0, 4), 'READ FROM SOCKET', Date.now(), 'DATA:', data.length)
+          return process.nextTick(cb, null, data)
+        }
+      })
+      const writeProbe = new Transform({
+        transform: (data, cb) => {
+          console.log(this.id.toString('hex').slice(0, 4), 'WRITE TO SOCKET', Date.now(), 'DATA:', data.length)
+          return process.nextTick(cb, null, data)
+        }
+      })
 
-      pump(socket, latencyStream || protocolStream, socket, err => {
+      pump(socket, readProbe, latencyStream || protocolStream, writeProbe, socket, err => {
         if (err) this.emit('replication-error', err)
         const idx = this._replicationStreams.indexOf(protocolStream)
         if (idx === -1) return

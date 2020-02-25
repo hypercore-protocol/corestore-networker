@@ -163,7 +163,7 @@ test.only('can replicate with added latency, many blocks', async t => {
   const { store: store1, networker: networker1 } = await create({ latency: 0 })
   const { store: store2, networker: networker2 } = await create({ latency: 0 })
 
-  const NUM_BLOCKS = 10
+  const NUM_BLOCKS = 1000
 
   const core1 = await store1.get()
   const core2 = await store2.get(core1.key)
