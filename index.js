@@ -96,6 +96,10 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
+  status (discoveryKey) {
+    return this.swarm && this.swarm.status(discoveryKey)
+  }
+
   async join (discoveryKey, opts = {}) {
     if (this.swarm && this.swarm.destroyed) return null
     if (!this.swarm) {
