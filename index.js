@@ -52,10 +52,14 @@ class SwarmNetworker extends EventEmitter {
     this.swarm.on('connection', (socket, info) => {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
+      const discoveryKey = info.peer && info.peer.topic
 
       // We block all the corestore's ifAvailable guards until the connection's handshake has succeeded or the stream closes.
-      let handshaking = true
-      this.corestore.guard.wait()
+      if (discoveryKey) {
+        var handshaking = true
+        var core = this.corestore.get({ discoveryKey })
+        core.ifAvailable.wait()
+      }
 
       const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
       protocolStream.on('handshake', () => {
@@ -88,9 +92,9 @@ class SwarmNetworker extends EventEmitter {
       }
 
       function ifAvailableContinue () {
-        if (handshaking) {
+        if (core && handshaking) {
           handshaking = false
-          self.corestore.guard.continue()
+          core.ifAvailable.continue()
         }
       }
     })
@@ -111,21 +115,18 @@ class SwarmNetworker extends EventEmitter {
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
 
     this._seeding.add(keyString)
-    return new Promise((resolve, reject) => {
-      this.swarm.join(keyBuf, {
-        announce: opts.announce !== false,
-        lookup: opts.lookup !== false
-      }, err => {
-        if (err) return reject(err)
-        if (opts.flush !== false) {
-          return this.swarm.flush(err => {
-            if (err) return reject(err)
-            return resolve(null)
-          })
-        }
-        return resolve(null)
-      })
+    this.swarm.join(keyBuf, {
+      announce: opts.announce !== false,
+      lookup: opts.lookup !== false
     })
+    if (opts.flush !== false) {
+      return new Promise((resolve, reject) => {
+        this.swarm.flush(err => {
+          if (err) return reject(err)
+          return resolve()
+        })
+      })
+    }
   }
 
   async leave (discoveryKey) {
