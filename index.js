@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const { EventEmitter } = require('events')
+const { promisify } = require('util')
 
 const datEncoding = require('dat-encoding')
 const HypercoreProtocol = require('hypercore-protocol')
@@ -113,19 +114,24 @@ class SwarmNetworker extends EventEmitter {
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
+    var core
 
-    this._seeding.add(keyString)
-    this.swarm.join(keyBuf, {
-      announce: opts.announce !== false,
-      lookup: opts.lookup !== false
-    })
-    if (opts.flush !== false) {
-      return new Promise((resolve, reject) => {
-        this.swarm.flush(err => {
-          if (err) return reject(err)
-          return resolve()
-        })
+    if (this.corestore.isLoaded({ discoveryKey: keyBuf })) {
+      core = this.corestore.get({ discoveryKey: keyBuf })
+      core.ifAvailable.wait()
+    }
+
+    try {
+      this._seeding.add(keyString)
+      this.swarm.join(keyBuf, {
+        announce: opts.announce !== false,
+        lookup: opts.lookup !== false
       })
+      if (opts.flush !== false) {
+        await promisify(this.swarm.flush.bind(this.swarm))()
+      }
+    } finally {
+      if (core) core.ifAvailable.continue()
     }
   }
 
