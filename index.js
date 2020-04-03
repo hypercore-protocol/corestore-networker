@@ -135,6 +135,10 @@ class SwarmNetworker extends EventEmitter {
           const core = getCoreIfLoaded()
           return Math.max(initialLength, (core && core.length) || 0)
         }
+      }, (err, res) => {
+        if (core && !err && res.maxLength ) {
+          core.setExpectedLength(res.maxLength)
+        }
       })
       if (opts.flush !== false) {
         await promisify(this.swarm.flush.bind(this.swarm))()
