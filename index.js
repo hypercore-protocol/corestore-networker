@@ -53,7 +53,8 @@ class SwarmNetworker extends EventEmitter {
     this.swarm.on('connection', (socket, info) => {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
-      const discoveryKey = info.peer && info.peer.topic
+      const peerInfo = info.peer
+      const discoveryKey = peerInfo && peerInfo.topic
 
       // We block all the corestore's ifAvailable guards until the connection's handshake has succeeded or the stream closes.
       if (discoveryKey) {
@@ -72,7 +73,7 @@ class SwarmNetworker extends EventEmitter {
         onhandshake()
       })
       protocolStream.on('close', () => {
-        this.emit('stream-closed', protocolStream)
+        this.emit('stream-closed', protocolStream, peerInfo)
         ifAvailableContinue()
       })
 
@@ -83,12 +84,12 @@ class SwarmNetworker extends EventEmitter {
         this._replicationStreams.splice(idx, 1)
       })
 
-      this.emit('stream-opened', protocolStream)
+      this.emit('stream-opened', protocolStream, peerInfo)
 
       function onhandshake () {
         self._replicate(protocolStream)
         self._replicationStreams.push(protocolStream)
-        self.emit('handshake', protocolStream)
+        self.emit('handshake', protocolStream, peerInfo)
         ifAvailableContinue()
       }
 
@@ -111,27 +112,45 @@ class SwarmNetworker extends EventEmitter {
       this._listen()
       return this.join(discoveryKey, opts)
     }
+    const self = this
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
-    var core
+    var initialLength = 0
 
-    if (this.corestore.isLoaded({ discoveryKey: keyBuf })) {
-      core = this.corestore.get({ discoveryKey: keyBuf })
-      core.ifAvailable.wait()
+    const core = getCoreIfLoaded()
+    if (core) core.ifAvailable.wait()
+
+    if (opts.loadForLength) {
+      await new Promise(resolve => core.ready(resolve))
+      initialLength = core.length
     }
 
     try {
       this._seeding.add(keyString)
       this.swarm.join(keyBuf, {
         announce: opts.announce !== false,
-        lookup: opts.lookup !== false
+        lookup: opts.lookup !== false,
+        length: () => {
+          const core = getCoreIfLoaded()
+          return Math.max(initialLength, (core && core.length) || 0)
+        }
       })
       if (opts.flush !== false) {
         await promisify(this.swarm.flush.bind(this.swarm))()
+        if (opts.loadForLength && !core.peers.length) {
+          core.close()
+        }
       }
     } finally {
       if (core) core.ifAvailable.continue()
+    }
+
+    function getCoreIfLoaded () {
+      if (self.corestore.isLoaded({ discoveryKey: keyBuf }) || opts.loadForLength) {
+        return self.corestore.get({ discoveryKey: keyBuf })
+      }
+      return null
     }
   }
 
