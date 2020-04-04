@@ -18,12 +18,13 @@ class SwarmNetworker extends EventEmitter {
     this.corestore = corestore
     this.id = opts.id || crypto.randomBytes(32)
     this.opts = opts
+    this.keyPair = opts.keyPair || HypercoreProtocol.keyPair()
 
     this._replicationOpts = {
       id: this.id,
       encrypt: true,
       live: true,
-      keyPair: opts.keyPair || HypercoreProtocol.keyPair()
+      keyPair: this.keyPair
     }
 
     this._seeding = new Set()
@@ -55,8 +56,9 @@ class SwarmNetworker extends EventEmitter {
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
       const peerInfo = info.peer
       const discoveryKey = peerInfo && peerInfo.topic
+      var finishedHandshake = false
 
-      // We block all the corestore's ifAvailable guards until the connection's handshake has succeeded or the stream closes.
+      // We the core's ifAvailable guard until the connection's handshake has succeeded or the stream closes.
       if (discoveryKey) {
         var handshaking = true
         var core = this.corestore.get({ discoveryKey })
@@ -70,10 +72,11 @@ class SwarmNetworker extends EventEmitter {
           ifAvailableContinue()
           return
         }
+        finishedHandshake = true
         onhandshake()
       })
       protocolStream.on('close', () => {
-        this.emit('stream-closed', protocolStream, peerInfo)
+        this.emit('stream-closed', protocolStream, peerInfo, finishedHandshake)
         ifAvailableContinue()
       })
 
@@ -136,7 +139,8 @@ class SwarmNetworker extends EventEmitter {
           return Math.max(initialLength, (core && core.length) || 0)
         }
       }, (err, res) => {
-        if (core && !err && res.maxLength ) {
+        if (core && !err && res.maxLength) {
+          console.log('setting expected core length to:', res.maxLength)
           core.setExpectedLength(res.maxLength)
         }
       })
