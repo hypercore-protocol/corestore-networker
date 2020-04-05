@@ -140,7 +140,6 @@ class SwarmNetworker extends EventEmitter {
         }
       }, (err, res) => {
         if (core && !err && res.maxLength) {
-          console.log('setting expected core length to:', res.maxLength)
           core.setExpectedLength(res.maxLength)
         }
       })
