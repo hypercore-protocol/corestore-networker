@@ -72,11 +72,10 @@ class SwarmNetworker extends EventEmitter {
           ifAvailableContinue()
           return
         }
-        finishedHandshake = true
         onhandshake()
       })
       protocolStream.on('close', () => {
-        this.emit('stream-closed', protocolStream, peerInfo, finishedHandshake)
+        this.emit('stream-closed', protocolStream, info, finishedHandshake)
         ifAvailableContinue()
       })
 
@@ -87,12 +86,13 @@ class SwarmNetworker extends EventEmitter {
         this._replicationStreams.splice(idx, 1)
       })
 
-      this.emit('stream-opened', protocolStream, peerInfo)
+      this.emit('stream-opened', protocolStream, info)
 
       function onhandshake () {
+        finishedHandshake = true
         self._replicate(protocolStream)
         self._replicationStreams.push(protocolStream)
-        self.emit('handshake', protocolStream, peerInfo)
+        self.emit('handshake', protocolStream, info)
         ifAvailableContinue()
       }
 
