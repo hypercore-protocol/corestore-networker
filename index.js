@@ -27,8 +27,8 @@ class SwarmNetworker extends EventEmitter {
       keyPair: this.keyPair
     }
 
+    this.streams = []
     this._seeding = new Set()
-    this._replicationStreams = []
 
     // Set in listen
     this.swarm = null
@@ -81,9 +81,9 @@ class SwarmNetworker extends EventEmitter {
 
       pump(socket, protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
-        const idx = this._replicationStreams.indexOf(protocolStream)
+        const idx = this.streams.indexOf(protocolStream)
         if (idx === -1) return
-        this._replicationStreams.splice(idx, 1)
+        this.streams.splice(idx, 1)
       })
 
       this.emit('stream-opened', protocolStream, info)
@@ -91,7 +91,7 @@ class SwarmNetworker extends EventEmitter {
       function onhandshake () {
         finishedHandshake = true
         self._replicate(protocolStream)
-        self._replicationStreams.push(protocolStream)
+        self.streams.push(protocolStream)
         self.emit('handshake', protocolStream, info)
         ifAvailableContinue()
       }
@@ -179,7 +179,7 @@ class SwarmNetworker extends EventEmitter {
       })
     })
 
-    for (let stream of this._replicationStreams) {
+    for (let stream of this.streams) {
       stream.close(keyBuf)
     }
   }
@@ -190,7 +190,7 @@ class SwarmNetworker extends EventEmitter {
     const leaving = [...this._seeding].map(dkey => this.leave(dkey))
     await Promise.all(leaving)
 
-    const closingStreams = this._replicationStreams.map(stream => {
+    const closingStreams = this.streams.map(stream => {
       return new Promise(resolve => {
         stream.destroy()
         eos(stream, () => resolve())
