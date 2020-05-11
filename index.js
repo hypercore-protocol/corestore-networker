@@ -28,7 +28,12 @@ class SwarmNetworker extends EventEmitter {
     }
 
     this.streams = []
-    this._seeding = new Set()
+    this._joined = new Set()
+    this._flushed = new Set()
+    this._statuses = new Map()
+
+    this._streamsProcessing = 0
+    this._streamsProcessed = 0
 
     // Set in listen
     this.swarm = null
@@ -58,25 +63,17 @@ class SwarmNetworker extends EventEmitter {
       const discoveryKey = peerInfo && peerInfo.topic
       var finishedHandshake = false
 
-      // We the core's ifAvailable guard until the connection's handshake has succeeded or the stream closes.
-      if (discoveryKey) {
-        var handshaking = true
-        var core = this.corestore.get({ discoveryKey })
-        core.ifAvailable.wait()
-      }
-
       const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
-        if (deduped) {
-          ifAvailableContinue()
-          return
-        }
-        onhandshake()
+        if (!deduped) onhandshake()
+        this._streamsProcessed++
+        this.emit('stream-processed')
       })
       protocolStream.on('close', () => {
         this.emit('stream-closed', protocolStream, info, finishedHandshake)
-        ifAvailableContinue()
+        this._streamsProcessed++
+        this.emit('stream-processed')
       })
 
       pump(socket, protocolStream, socket, err => {
@@ -87,20 +84,13 @@ class SwarmNetworker extends EventEmitter {
       })
 
       this.emit('stream-opened', protocolStream, info)
+      this._streamsProcessing++
 
       function onhandshake () {
         finishedHandshake = true
         self._replicate(protocolStream)
         self.streams.push(protocolStream)
         self.emit('handshake', protocolStream, info)
-        ifAvailableContinue()
-      }
-
-      function ifAvailableContinue () {
-        if (core && handshaking) {
-          handshaking = false
-          core.ifAvailable.continue()
-        }
       }
     })
   }
@@ -130,7 +120,9 @@ class SwarmNetworker extends EventEmitter {
     }
 
     try {
-      this._seeding.add(keyString)
+      this._joined.add(keyString)
+      var status = this._statuses.get(keyString)
+      if (status) status.emit('joined')
       this.swarm.join(keyBuf, {
         announce: opts.announce !== false,
         lookup: opts.lookup !== false,
@@ -145,6 +137,21 @@ class SwarmNetworker extends EventEmitter {
       })
       if (opts.flush !== false) {
         await promisify(this.swarm.flush.bind(this.swarm))()
+        if (this._streamsProcessed >= this._streamsProcessing) {
+          this._flushed.add(keyString)
+          status = this._statuses.get(keyString)
+          if (status) status.emit('flushed')
+        } else {
+          // Wait until the stream processing has caught up.
+          const processedListener = this.on('stream-processed', () => {
+            status = this._statuses.get(keyString)
+            if (this._streamsProcessed >= this._streamsProcessing) {
+              if (status) status.emit('flushed')
+              this._flushed.add(keyString)
+              this.removeListener('stream-processed', processedListener)
+            }
+          })
+        }
         if (opts.loadForLength && !core.peers.length) {
           core.close()
         }
@@ -171,7 +178,7 @@ class SwarmNetworker extends EventEmitter {
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
 
-    this._seeding.delete(keyString)
+    this._joined.delete(keyString)
     await new Promise((resolve, reject) => {
       this.swarm.leave(keyBuf, err => {
         if (err) return reject(err)
@@ -184,10 +191,23 @@ class SwarmNetworker extends EventEmitter {
     }
   }
 
+  status (discoveryKey) {
+    if (typeof discoveryKey !== 'string') discoveryKey = discoveryKey.toString('hex')
+    var statusEmitter = this._statuses.get(discoveryKey)
+    if (statusEmitter) return statusEmitter
+
+    statusEmitter = new EventEmitter()
+    statusEmitter.joined = () => this._joined.has(discoveryKey)
+    statusEmitter.flushed = () => this._flushed.has(discoveryKey)
+    this._statuses.set(discoveryKey, statusEmitter)
+
+    return statusEmitter
+  }
+
   async close () {
     if (!this.swarm) return null
 
-    const leaving = [...this._seeding].map(dkey => this.leave(dkey))
+    const leaving = [...this._joined].map(dkey => this.leave(dkey))
     await Promise.all(leaving)
 
     const closingStreams = this.streams.map(stream => {
