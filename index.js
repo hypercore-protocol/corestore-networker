@@ -30,13 +30,14 @@ class SwarmNetworker extends EventEmitter {
     this.streams = []
     this._joined = new Set()
     this._flushed = new Set()
-    this._statuses = new Map()
 
     this._streamsProcessing = 0
     this._streamsProcessed = 0
 
     // Set in listen
     this.swarm = null
+
+    this.setMaxListeners(0)
   }
 
   _replicate (protocolStream) {
@@ -128,8 +129,7 @@ class SwarmNetworker extends EventEmitter {
 
     try {
       this._joined.add(keyString)
-      var status = this._statuses.get(keyString)
-      if (status) status.emit('joined')
+      this.emit('joined', keyBuf)
       this.swarm.join(keyBuf, {
         announce: opts.announce !== false,
         lookup: opts.lookup !== false,
@@ -144,17 +144,23 @@ class SwarmNetworker extends EventEmitter {
       })
       if (opts.flush !== false) {
         await promisify(this.swarm.flush.bind(this.swarm))()
-        if (this._streamsProcessed >= this._streamsProcessing) {
+        if (!this._joined.has(keyString)) {
+          return
+        }
+        const processingAfterFlush = this._streamsProcessing
+        if (this._streamsProcessed >= processingAfterFlush) {
           this._flushed.add(keyString)
-          status = this._statuses.get(keyString)
-          if (status) status.emit('flushed')
+          this.emit('flushed', keyBuf)
         } else {
           // Wait until the stream processing has caught up.
           const processedListener =  () => {
-            status = this._statuses.get(keyString)
-            if (this._streamsProcessed >= this._streamsProcessing) {
-              if (status) status.emit('flushed')
+            if (!this._joined.has(keyString)) {
+              this.removeListener('stream-processed', processedListener)
+              return
+            }
+            if (this._streamsProcessed >= processingAfterFlush) {
               this._flushed.add(keyString)
+              this.emit('flushed', keyBuf)
               this.removeListener('stream-processed', processedListener)
             }
           }
@@ -187,6 +193,7 @@ class SwarmNetworker extends EventEmitter {
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
 
     this._joined.delete(keyString)
+
     await new Promise((resolve, reject) => {
       this.swarm.leave(keyBuf, err => {
         if (err) return reject(err)
@@ -199,17 +206,14 @@ class SwarmNetworker extends EventEmitter {
     }
   }
 
-  status (discoveryKey) {
+  joined (discoveryKey) {
     if (typeof discoveryKey !== 'string') discoveryKey = discoveryKey.toString('hex')
-    var statusEmitter = this._statuses.get(discoveryKey)
-    if (statusEmitter) return statusEmitter
+    return this._joined.has(discoveryKey)
+  }
 
-    statusEmitter = new EventEmitter()
-    statusEmitter.joined = () => this._joined.has(discoveryKey)
-    statusEmitter.flushed = () => this._flushed.has(discoveryKey)
-    this._statuses.set(discoveryKey, statusEmitter)
-
-    return statusEmitter
+  flushed (discoveryKey) {
+    if (typeof discoveryKey !== 'string') discoveryKey = discoveryKey.toString('hex')
+    return this._joined.has(discoveryKey)
   }
 
   async close () {
