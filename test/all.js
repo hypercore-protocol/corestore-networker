@@ -131,29 +131,47 @@ test('can replication with a custom keypair', async t => {
   t.end()
 })
 
-test('joining blocks ifAvail on a loaded core', async t => {
+test('join status only emits flushed after all handshakes', async t => {
   const { store: store1, networker: networker1 } = await create()
   const { store: store2, networker: networker2 } = await create()
   const { store: store3, networker: networker3 } = await create()
-  const unloadedKeypair = hypercoreCrypto.keyPair()
 
   const core1 = store1.get()
   const core2 = store2.get(core1.key)
   await append(core1, 'hello')
 
+  let join2Flushed = 0
+  let join3Flushed = 0
+  let join2FlushPeers = 0
+  let join3FlushPeers = 0
+
   // If ifAvail were not blocked, the get would immediately return with null (unless the connection's established immediately).
   await networker1.join(core1.discoveryKey)
-  let joinProm = networker2.join(core2.discoveryKey)
-  let data = await get(core2, 0)
-  await joinProm
-  t.same(data, Buffer.from('hello'))
+  const joinStatus2 = networker2.status(core2.discoveryKey)
+  joinStatus2.on('flushed', () => {
+    join2Flushed++
+    join2FlushPeers = core2.peers.length
+  })
+  await networker2.join(core1.discoveryKey)
 
-  // store3 does not have core3 loaded when joined, and it should not be loaded on join.
-  joinProm = await networker3.join(core1.discoveryKey)
-  t.same(store3.list().size, 0)
+  const core3 = store3.get(core1.key)
+  const joinStatus3 = networker3.status(core1.discoveryKey)
+  joinStatus3.on('flushed', () => {
+    join3Flushed++
+    join3FlushPeers = core3.peers.length
+    allFlushed()
+  })
+  networker3.debug = console.log
+  networker3.join(core1.discoveryKey)
 
-  await cleanup([networker1, networker2, networker3])
-  t.end()
+  async function allFlushed () {
+    t.same(join2Flushed, 1)
+    t.true(join2FlushPeers >= 1)
+    t.same(join3Flushed, 1)
+    t.true(join3FlushPeers >= 2)
+    await cleanup([networker1, networker2, networker3])
+    t.end()
+  }
 })
 
 test('can destroy multiple times', async t => {
