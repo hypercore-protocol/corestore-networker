@@ -120,58 +120,52 @@ class SwarmNetworker extends EventEmitter {
     var initialLength = 0
 
     const core = getCoreIfLoaded()
-    if (core) core.ifAvailable.wait()
-
-    if (opts.loadForLength) {
+    if (core && opts.loadForLength) {
       await new Promise(resolve => core.ready(resolve))
       initialLength = core.length
     }
 
-    try {
-      this._joined.add(keyString)
-      this.emit('joined', keyBuf)
-      this.swarm.join(keyBuf, {
-        announce: opts.announce !== false,
-        lookup: opts.lookup !== false,
-        length: () => {
-          const core = getCoreIfLoaded()
-          return Math.max(initialLength, (core && core.length) || 0)
-        }
-      }, (err, res) => {
-        if (core && !err && res.maxLength) {
-          core.setExpectedLength(res.maxLength)
-        }
-      })
-      if (opts.flush !== false) {
-        await promisify(this.swarm.flush.bind(this.swarm))()
-        if (!this._joined.has(keyString)) {
-          return
-        }
-        const processingAfterFlush = this._streamsProcessing
-        if (this._streamsProcessed >= processingAfterFlush) {
-          this._flushed.add(keyString)
-          this.emit('flushed', keyBuf)
-        } else {
-          // Wait until the stream processing has caught up.
-          const processedListener =  () => {
-            if (!this._joined.has(keyString)) {
-              this.removeListener('stream-processed', processedListener)
-              return
-            }
-            if (this._streamsProcessed >= processingAfterFlush) {
-              this._flushed.add(keyString)
-              this.emit('flushed', keyBuf)
-              this.removeListener('stream-processed', processedListener)
-            }
-          }
-          this.on('stream-processed', processedListener)
-        }
-        if (opts.loadForLength && !core.peers.length) {
-          core.close()
-        }
+    this._joined.add(keyString)
+    this.emit('joined', keyBuf)
+    this.swarm.join(keyBuf, {
+      announce: opts.announce !== false,
+      lookup: opts.lookup !== false,
+      length: () => {
+        const core = getCoreIfLoaded()
+        return Math.max(initialLength, (core && core.length) || 0)
       }
-    } finally {
-      if (core) core.ifAvailable.continue()
+    }, (err, res) => {
+      if (core && !err && res.maxLength) {
+        core.setExpectedLength(res.maxLength)
+      }
+    })
+    if (opts.flush !== false) {
+      await promisify(this.swarm.flush.bind(this.swarm))()
+      if (!this._joined.has(keyString)) {
+        return
+      }
+      const processingAfterFlush = this._streamsProcessing
+      if (this._streamsProcessed >= processingAfterFlush) {
+        this._flushed.add(keyString)
+        this.emit('flushed', keyBuf)
+      } else {
+        // Wait until the stream processing has caught up.
+        const processedListener =  () => {
+          if (!this._joined.has(keyString)) {
+            this.removeListener('stream-processed', processedListener)
+            return
+          }
+          if (this._streamsProcessed >= processingAfterFlush) {
+            this._flushed.add(keyString)
+            this.emit('flushed', keyBuf)
+            this.removeListener('stream-processed', processedListener)
+          }
+        }
+        this.on('stream-processed', processedListener)
+      }
+      if (core && opts.loadForLength && !core.peers.length) {
+        core.close()
+      }
     }
 
     function getCoreIfLoaded () {
