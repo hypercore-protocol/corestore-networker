@@ -150,14 +150,15 @@ class SwarmNetworker extends EventEmitter {
           if (status) status.emit('flushed')
         } else {
           // Wait until the stream processing has caught up.
-          const processedListener = this.on('stream-processed', () => {
+          const processedListener =  () => {
             status = this._statuses.get(keyString)
             if (this._streamsProcessed >= this._streamsProcessing) {
               if (status) status.emit('flushed')
               this._flushed.add(keyString)
               this.removeListener('stream-processed', processedListener)
             }
-          })
+          }
+          this.on('stream-processed', processedListener)
         }
         if (opts.loadForLength && !core.peers.length) {
           core.close()
