@@ -62,18 +62,25 @@ class SwarmNetworker extends EventEmitter {
       const peerInfo = info.peer
       const discoveryKey = peerInfo && peerInfo.topic
       var finishedHandshake = false
+      var processed = false
 
       const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
         if (!deduped) onhandshake()
-        this._streamsProcessed++
-        this.emit('stream-processed')
+        if (!processed) {
+          processed = true
+          this._streamsProcessed++
+          this.emit('stream-processed')
+        }
       })
       protocolStream.on('close', () => {
         this.emit('stream-closed', protocolStream, info, finishedHandshake)
-        this._streamsProcessed++
-        this.emit('stream-processed')
+        if (!processed) {
+          processed = true
+          this._streamsProcessed++
+          this.emit('stream-processed')
+        }
       })
 
       pump(socket, protocolStream, socket, err => {
