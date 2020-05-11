@@ -147,21 +147,20 @@ test('join status only emits flushed after all handshakes', async t => {
 
   // If ifAvail were not blocked, the get would immediately return with null (unless the connection's established immediately).
   await networker1.join(core1.discoveryKey)
-  const joinStatus2 = networker2.status(core2.discoveryKey)
-  joinStatus2.on('flushed', () => {
+  networker2.on('flushed', dkey => {
+    if (!dkey.equals(core1.discoveryKey)) return
     join2Flushed++
     join2FlushPeers = core2.peers.length
   })
   await networker2.join(core1.discoveryKey)
 
   const core3 = store3.get(core1.key)
-  const joinStatus3 = networker3.status(core1.discoveryKey)
-  joinStatus3.on('flushed', () => {
+  networker3.on('flushed', (dkey) => {
+    if (!dkey.equals(core1.discoveryKey)) return
     join3Flushed++
     join3FlushPeers = core3.peers.length
     allFlushed()
   })
-  networker3.debug = console.log
   networker3.join(core1.discoveryKey)
 
   async function allFlushed () {
