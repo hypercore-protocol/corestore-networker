@@ -59,6 +59,12 @@ Waits for the topic to be fully joined before resolving.
   lookup: true  // Look up the discovery key on the swarm
 ```
 
+### `networker.joined(discoveryKey)`
+Returns `true` if that discovery key is being swarmed.
+
+### `networker.flushed(discoveryKey)`
+Returns true if the swarm has discovered and attempted to connect to all peers announcing `discoveryKey`.
+
 #### `await networker.leave(discoveryKey)`
 Stop announcing or looking up the discovery key topic.
 
