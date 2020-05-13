@@ -207,7 +207,7 @@ class SwarmNetworker extends EventEmitter {
 
   flushed (discoveryKey) {
     if (typeof discoveryKey !== 'string') discoveryKey = discoveryKey.toString('hex')
-    return this._joined.has(discoveryKey)
+    return this._flushed.has(discoveryKey)
   }
 
   async close () {
