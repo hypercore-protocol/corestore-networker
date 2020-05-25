@@ -54,6 +54,7 @@ class SwarmNetworker extends EventEmitter {
 
     this.swarm = hyperswarm({
       ...this.opts,
+      announceLocalNetwork: true,
       queue: { multiplex: true }
     })
     this.swarm.on('error', err => this.emit('error', err))
