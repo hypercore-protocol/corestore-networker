@@ -164,9 +164,6 @@ class SwarmNetworker extends EventEmitter {
         }
         this.on('stream-processed', processedListener)
       }
-      if (core && opts.loadForLength && !core.peers.length) {
-        core.close()
-      }
     }
 
     function getCoreIfLoaded () {
