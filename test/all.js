@@ -101,8 +101,8 @@ test('replicate sub-cores', async t => {
 })
 
 test('can replication with a custom keypair', async t => {
-  const keyPair1 = HypercoreProtocol.keyPair('seed1')
-  const keyPair2 = HypercoreProtocol.keyPair('seed2')
+  const keyPair1 = HypercoreProtocol.keyPair()
+  const keyPair2 = HypercoreProtocol.keyPair()
   const { store: store1, networker: networker1 } = await create({ keyPair: keyPair1 })
   const { store: store2, networker: networker2 } = await create({ keyPair: keyPair2 })
 
