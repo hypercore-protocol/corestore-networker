@@ -164,6 +164,14 @@ class SwarmNetworker extends EventEmitter {
         }
         this.on('stream-processed', processedListener)
       }
+      // This is a tricky condition:
+      // If we loaded the core specifically to get its length, and:
+      //   1) Nobody has externally requested it since.
+      //   2) It's only loaded internally, but it doesn't have any peers after the flush.
+      // Then it's OK to close it here.
+      if (core && opts.loadForLength && !self.corestore.isExternal({ discoveryKey: keyBuf }) && !core.peers.length) {
+        core.close()
+      }
     }
 
     function getCoreIfLoaded () {
