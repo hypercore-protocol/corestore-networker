@@ -48,7 +48,7 @@ class SwarmNetworker extends EventEmitter {
     })
   }
 
-  _listen () {
+  listen () {
     const self = this
     if (this.swarm) return
 
@@ -111,7 +111,7 @@ class SwarmNetworker extends EventEmitter {
   async join (discoveryKey, opts = {}) {
     if (this.swarm && this.swarm.destroyed) return null
     if (!this.swarm) {
-      this._listen()
+      this.listen()
       return this.join(discoveryKey, opts)
     }
     const self = this
@@ -185,7 +185,7 @@ class SwarmNetworker extends EventEmitter {
   async leave (discoveryKey) {
     if (this.swarm && this.swarm.destroyed) return
     if (!this.swarm) {
-      this._listen()
+      this.listen()
       return this.leave(discoveryKey)
     }
 
