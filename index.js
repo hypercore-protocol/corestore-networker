@@ -118,27 +118,12 @@ class SwarmNetworker extends EventEmitter {
 
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
-    var initialLength = 0
-
-    const core = getCoreIfLoaded()
-    if (core && opts.loadForLength) {
-      await new Promise(resolve => core.ready(resolve))
-      initialLength = core.length
-    }
 
     this._joined.add(keyString)
     this.emit('joined', keyBuf)
     this.swarm.join(keyBuf, {
       announce: opts.announce !== false,
       lookup: opts.lookup !== false,
-      length: () => {
-        const core = getCoreIfLoaded()
-        return Math.max(initialLength, (core && core.length) || 0)
-      }
-    }, (err, res) => {
-      if (core && !err && res.maxLength) {
-        core.setExpectedLength(res.maxLength)
-      }
     })
     if (opts.flush !== false) {
       await promisify(this.swarm.flush.bind(this.swarm))()
@@ -164,21 +149,6 @@ class SwarmNetworker extends EventEmitter {
         }
         this.on('stream-processed', processedListener)
       }
-      // This is a tricky condition:
-      // If we loaded the core specifically to get its length, and:
-      //   1) Nobody has externally requested it since.
-      //   2) It's only loaded internally, but it doesn't have any peers after the flush.
-      // Then it's OK to close it here.
-      if (core && opts.loadForLength && !self.corestore.isExternal({ discoveryKey: keyBuf }) && !core.peers.length) {
-        core.close()
-      }
-    }
-
-    function getCoreIfLoaded () {
-      if (self.corestore.isLoaded({ discoveryKey: keyBuf }) || opts.loadForLength) {
-        return self.corestore.get({ discoveryKey: keyBuf })
-      }
-      return null
     }
   }
 
