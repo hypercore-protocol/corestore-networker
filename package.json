@@ -1,10 +1,9 @@
 {
-  "name": "corestore-swarm-networking",
-  "version": "5.5.1",
-  "description": "A corestore networker based on hyperswarm ",
+  "name": "corestore-networker",
+  "version": "1.0.0",
+  "description": "A corestore networking module based on Hyperswarm.",
   "main": "index.js",
   "dependencies": {
-    "dat-encoding": "^5.0.1",
     "debug": "^4.1.1",
     "end-of-stream": "^1.4.4",
     "hypercore-protocol": "^8.0.0",
@@ -22,7 +21,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/andrewosh/corestore-swarm-networking.git"
+    "url": "git+https://github.com/andrewosh/corestore-networker.git"
   },
   "keywords": [
     "corestore",
@@ -31,7 +30,7 @@
   "author": "Andrew Osheroff <andrewosh@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/andrewosh/corestore-swarm-networking/issues"
+    "url": "https://github.com/andrewosh/corestore-networker/issues"
   },
-  "homepage": "https://github.com/andrewosh/corestore-swarm-networking#readme"
+  "homepage": "https://github.com/andrewosh/corestore-networker#readme"
 }

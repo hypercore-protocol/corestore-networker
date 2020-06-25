@@ -5,7 +5,7 @@ const hypercoreCrypto = require('hypercore-crypto')
 const HypercoreProtocol = require('hypercore-protocol')
 const Corestore = require('corestore')
 
-const SwarmNetworker = require('..')
+const CorestoreNetworker = require('..')
 
 const BOOTSTRAP_PORT = 3100
 var bootstrap = null
@@ -17,8 +17,8 @@ test('simple replication', async t => {
   const core1 = store1.get()
   const core2 = store2.get(core1.key)
 
-  await networker1.join(core1.discoveryKey)
-  await networker2.join(core2.discoveryKey)
+  await networker1.configure(core1.discoveryKey)
+  await networker2.configure(core2.discoveryKey)
 
   await append(core1, 'hello')
   const data = await get(core2, 0)
@@ -37,10 +37,10 @@ test('replicate multiple top-level cores', async t => {
   const core3 = store2.get(core1.key)
   const core4 = store2.get(core2.key)
 
-  await networker1.join(core1.discoveryKey)
-  await networker1.join(core2.discoveryKey)
-  await networker2.join(core2.discoveryKey)
-  await networker2.join(core3.discoveryKey)
+  await networker1.configure(core1.discoveryKey)
+  await networker1.configure(core2.discoveryKey)
+  await networker2.configure(core2.discoveryKey)
+  await networker2.configure(core3.discoveryKey)
 
   await append(core1, 'hello')
   await append(core2, 'world')
@@ -62,9 +62,9 @@ test('replicate to multiple receivers', async t => {
   const core2 = store2.get(core1.key)
   const core3 = store3.get(core1.key)
 
-  await networker1.join(core1.discoveryKey)
-  await networker2.join(core2.discoveryKey)
-  await networker3.join(core3.discoveryKey)
+  await networker1.configure(core1.discoveryKey)
+  await networker2.configure(core2.discoveryKey)
+  await networker3.configure(core3.discoveryKey)
 
   await append(core1, 'hello')
   const d1 = await get(core2, 0)
@@ -83,8 +83,8 @@ test('replicate sub-cores', async t => {
   const core1 = store1.get()
   const core3 = store2.get(core1.key)
 
-  await networker1.join(core1.discoveryKey)
-  await networker2.join(core3.discoveryKey)
+  await networker1.configure(core1.discoveryKey)
+  await networker2.configure(core3.discoveryKey)
 
   const core2 = store1.get({ parents: [core1.key] })
   const core4 = store2.get({ key: core2.key, parents: [core3.key]})
@@ -109,8 +109,8 @@ test('can replication with a custom keypair', async t => {
   const core1 = store1.get()
   const core3 = store2.get(core1.key)
 
-  await networker1.join(core1.discoveryKey)
-  await networker2.join(core3.discoveryKey)
+  await networker1.configure(core1.discoveryKey)
+  await networker2.configure(core3.discoveryKey)
 
   const core2 = store1.get()
   const core4 = store2.get({ key: core2.key })
@@ -146,13 +146,13 @@ test('join status only emits flushed after all handshakes', async t => {
   let join3FlushPeers = 0
 
   // If ifAvail were not blocked, the get would immediately return with null (unless the connection's established immediately).
-  await networker1.join(core1.discoveryKey)
+  await networker1.configure(core1.discoveryKey)
   networker2.on('flushed', dkey => {
     if (!dkey.equals(core1.discoveryKey)) return
     join2Flushed++
     join2FlushPeers = core2.peers.length
   })
-  await networker2.join(core1.discoveryKey)
+  await networker2.configure(core1.discoveryKey)
 
   const core3 = store3.get(core1.key)
   networker3.on('flushed', (dkey) => {
@@ -161,7 +161,7 @@ test('join status only emits flushed after all handshakes', async t => {
     join3FlushPeers = core3.peers.length
     allFlushed()
   })
-  networker3.join(core1.discoveryKey)
+  networker3.configure(core1.discoveryKey)
 
   async function allFlushed () {
     t.same(join2Flushed, 1)
@@ -200,7 +200,7 @@ async function create (opts = {}) {
   }
   const store =  new Corestore(ram)
   await store.ready()
-  const networker = new SwarmNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
+  const networker = new CorestoreNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
   return { store, networker }
 }
 
