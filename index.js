@@ -52,14 +52,14 @@ class CorestoreNetworker extends EventEmitter {
   }
 
   async _join (discoveryKey, opts = {}) {
-    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
-    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
+    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : discoveryKey.toString('hex')
+    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : Buffer.from(discoveryKey, 'hex')
 
     this._joined.add(keyString)
     this.emit('joined', keyBuf)
     this.swarm.join(keyBuf, {
-      announce: opts.announce !== false,
-      lookup: opts.lookup !== false,
+      announce: opts.announce,
+      lookup: opts.lookup
     })
     if (opts.flush !== false) {
       await promisify(this.swarm.flush.bind(this.swarm))()
@@ -89,8 +89,8 @@ class CorestoreNetworker extends EventEmitter {
   }
 
   async _leave (discoveryKey) {
-    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : datEncoding.encode(discoveryKey)
-    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : datEncoding.decode(discoveryKey)
+    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : discoveryKey.toString('hex')
+    const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : Buffer.from(discoveryKey, 'hex')
 
     this._joined.delete(keyString)
 
@@ -181,10 +181,16 @@ class CorestoreNetworker extends EventEmitter {
     }
     const self = this
 
+    const config = {
+      announce: opts.announce !== false,
+      lookup: opts.lookup !== false
+    }
+    opts = { ...opts, ...config }
+
     const keyString = (typeof discoveryKey === 'string') ? discoveryKey : Buffer.from(discoveryKey, 'hex')
     this._configurations.set(keyString, opts)
 
-    const joining = opts.announce || opts.lookup
+    const joining = config.announce || config.lookup
     if (joining) {
       return this._join(discoveryKey, opts)
     } else {
@@ -205,7 +211,7 @@ class CorestoreNetworker extends EventEmitter {
   async close () {
     if (!this.swarm) return null
 
-    const leaving = [...this._joined].map(dkey => this.leave(dkey))
+    const leaving = [...this._joined].map(dkey => this._leave(dkey))
     await Promise.all(leaving)
 
     const closingStreams = [...this.streams].map(stream => {

@@ -100,7 +100,7 @@ test('replicate sub-cores', async t => {
   t.end()
 })
 
-test('can replication with a custom keypair', async t => {
+test('can replicate using a custom keypair', async t => {
   const keyPair1 = HypercoreProtocol.keyPair()
   const keyPair2 = HypercoreProtocol.keyPair()
   const { store: store1, networker: networker1 } = await create({ keyPair: keyPair1 })
@@ -122,10 +122,17 @@ test('can replication with a custom keypair', async t => {
   t.same(d1, Buffer.from('hello'))
   t.same(d2, Buffer.from('world'))
 
-  t.same(networker1.streams[0].remotePublicKey, keyPair2.publicKey)
-  t.same(networker1.streams[0].publicKey, keyPair1.publicKey)
-  t.same(networker2.streams[0].remotePublicKey, keyPair1.publicKey)
-  t.same(networker2.streams[0].publicKey, keyPair2.publicKey)
+  {
+    const streams = [...networker1.streams]
+    t.same(streams[0].remotePublicKey, keyPair2.publicKey)
+    t.same(streams[0].publicKey, keyPair1.publicKey)
+  }
+
+  {
+    const streams = [...networker2.streams]
+    t.same(streams[0].remotePublicKey, keyPair1.publicKey)
+    t.same(streams[0].publicKey, keyPair2.publicKey)
+  }
 
   await cleanup([networker1, networker2])
   t.end()
