@@ -191,8 +191,52 @@ test('can destroy multiple times', async t => {
   t.end()
 })
 
-test.skip('each corestore only opens one connection per peer', async t => {
+test('peers are correctly added/removed', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+  const { networker: networker3 } = await create()
+
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+
+  const twoJoinsProm = new Promise(resolve => {
+    networker1.once('peer-add', peer => {
+      t.true(peer.remotePublicKey.equals(networker2.keyPair.publicKey))
+      networker1.once('peer-add', peer => {
+        t.true(peer.remotePublicKey.equals(networker3.keyPair.publicKey))
+        t.same(networker1.peers.size, 2)
+        return resolve()
+      })
+    })
+  })
+
+  const twoLeavesProm = new Promise(resolve => {
+    networker1.once('peer-remove', peer => {
+      t.true(peer.remotePublicKey.equals(networker2.keyPair.publicKey))
+      networker1.once('peer-remove', peer => {
+        t.true(peer.remotePublicKey.equals(networker3.keyPair.publicKey))
+        t.same(networker1.peers.size, 0)
+        return resolve()
+      })
+    })
+  })
+
+  await networker2.configure(dkey, { announce: false, lookup: true, flush: true })
+  await networker3.configure(dkey, { announce: false, lookup: true, flush: true })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  await networker2.close()
+  await networker3.close()
+
+  await Promise.all([twoJoinsProm, twoLeavesProm])
+
+  await cleanup([networker1])
   t.end()
+})
+
+test.skip('can register stream-wide extensions', async t => {
+
 })
 
 async function create (opts = {}) {

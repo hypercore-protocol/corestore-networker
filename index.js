@@ -146,7 +146,11 @@ class CorestoreNetworker extends EventEmitter {
       pump(socket, protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
         this.streams.delete(protocolStream)
-        if (protocolStream[STREAM_PEER]) this.peers.delete(protocolStream[STREAM_PEER])
+        if (protocolStream[STREAM_PEER]) {
+          const peer = protocolStream[STREAM_PEER]
+          this.peers.delete(peer)
+          this.emit('peer-remove', peer)
+        } 
       })
 
       this.emit('stream-opened', protocolStream, info)
@@ -160,6 +164,7 @@ class CorestoreNetworker extends EventEmitter {
         self.peers.add(peer)
         protocolStream[STREAM_PEER] = peer
         self.emit('handshake', protocolStream, info)
+        self.emit('peer-add', peer)
       }
     })
   }
@@ -194,7 +199,7 @@ class CorestoreNetworker extends EventEmitter {
     if (joining) {
       return this._join(discoveryKey, opts)
     } else {
-      return this._leave(discoveryKey, opts)
+      return this._leave(discoveryKey)
     }
   }
 
