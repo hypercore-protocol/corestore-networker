@@ -277,9 +277,122 @@ test('can register stream-wide extensions', async t => {
   await new Promise(resolve => setTimeout(resolve, 100))
   await allReceivedProm
 
-  console.log('cleaning up')
   await cleanup([networker1, networker2, networker3])
-  console.log('cleaned up')
+  t.end()
+})
+
+test('can register extensions with the same name', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+  const { networker: networker3 } = await create()
+
+  const froms = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
+  const msgs = ['hello', 'world']
+  let received = 0
+
+  var onmessage = null
+  const allReceivedProm = new Promise(resolve => {
+    onmessage = (msg, from) => {
+      t.true(from.remotePublicKey.equals(froms[received]))
+      t.same(msg, msgs[received])
+      received++
+      if (received === froms.length) return resolve()
+    }
+  })
+
+  const extensionOne = {
+    name: 'test-extension',
+    encoding: 'utf8',
+    onmessage
+  }
+  const extensionTwo = {
+    name: 'test-extension',
+    encoding: 'utf8',
+    onmessage,
+  }
+  networker1.registerExtension(extensionOne)
+  networker1.registerExtension(extensionTwo)
+  const n2Ext = networker2.registerExtension(extensionTwo)
+  const n3Ext = networker3.registerExtension(extensionTwo)
+
+  networker2.on('peer-add', peer => {
+    n2Ext.send('hello', peer)
+  })
+  networker3.on('peer-add', peer => {
+    n3Ext.send('world', peer)
+  })
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+  await networker2.configure(dkey, { announce: false, lookup: true, flush: true })
+  await networker3.configure(dkey, { announce: false, lookup: true, flush: true })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await allReceivedProm
+
+  await cleanup([networker1, networker2, networker3])
+  t.end()
+})
+
+test('bidirectional extension send/receive', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+
+  var firstReceivedProm = null
+  var secondReceivedProm = null
+
+  {
+    let onmessage = null
+    let ext = null
+
+    firstReceivedProm = new Promise(resolve => {
+      onmessage = (msg, from) => {
+        t.true(from.remotePublicKey.equals(networker2.keyPair.publicKey))
+        t.same(msg, 'hello')
+        ext.send('world', from)
+        return resolve()
+      }
+    })
+
+    ext = networker1.registerExtension({
+      name: 'test-extension',
+      encoding: 'utf8',
+      onmessage
+    })
+  }
+
+  {
+    let onmessage = null
+    let ext = null
+
+    secondReceivedProm = new Promise(resolve => {
+      onmessage = (msg, from) => {
+        t.true(from.remotePublicKey.equals(networker1.keyPair.publicKey))
+        t.same(msg, 'world')
+        return resolve()
+      }
+    })
+
+    ext = networker2.registerExtension({
+      name: 'test-extension',
+      encoding: 'utf8',
+      onmessage
+    })
+
+    networker2.on('peer-add', peer => {
+      ext.send('hello', peer)
+    })
+  }
+
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+  await networker2.configure(dkey, { announce: false, lookup: true, flush: true })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  await firstReceivedProm
+  await secondReceivedProm
+
+  await cleanup([networker1, networker2])
   t.end()
 })
 

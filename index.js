@@ -282,8 +282,8 @@ class SwarmExtension {
     this.networker = networker
     this.name = name
     this.encoding = codecs((opts && opts.encoding) || 'binary')
-    this.onmessage = opts.onmessage || noop
-    this.onerror = opts.onerror || noop
+    this.onmessage = opts.onmessage
+    this.onerror = opts.onerror
     this._peerExtensions = new Map()
   }
 
