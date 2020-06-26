@@ -4,6 +4,7 @@ const { promisify } = require('util')
 
 const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
+const codecs = require('codecs')
 const pump = require('pump')
 const eos = require('end-of-stream')
 
@@ -33,6 +34,8 @@ class CorestoreNetworker extends EventEmitter {
     this._joined = new Set()
     this._flushed = new Set()
     this._configurations = new Map()
+
+    this._extensions = new Set()
 
     this._streamsProcessing = 0
     this._streamsProcessed = 0
@@ -106,6 +109,42 @@ class CorestoreNetworker extends EventEmitter {
     }
   }
 
+  _registerAllExtensions (peer) {
+    for (const ext of this._extensions) {
+      ext._registerExtension(peer)
+    }
+  }
+
+  _unregisterAllExtensions (peer) {
+    for (const ext of this._extensions) {
+      ext._unregisterExtension(peer)
+    }
+  }
+
+  _addStream (stream) {
+    this._replicate(stream)
+    this.streams.add(stream)
+
+    const peer = intoPeer(stream)
+    this.peers.add(peer)
+    stream[STREAM_PEER] = peer
+
+    this._registerAllExtensions(peer)
+
+    this.emit('peer-add', peer)
+    this.emit('handshake', stream)
+  }
+
+  _removeStream (stream) {
+    this.streams.delete(stream)
+    if (stream[STREAM_PEER]) {
+      const peer = stream[STREAM_PEER]
+      this._unregisterAllExtensions(peer)
+      this.peers.delete(peer)
+      this.emit('peer-remove', peer)
+    }
+  }
+
   listen () {
     const self = this
     if (this.swarm) return
@@ -121,13 +160,17 @@ class CorestoreNetworker extends EventEmitter {
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
       const peerInfo = info.peer
       const discoveryKey = peerInfo && peerInfo.topic
+
       var finishedHandshake = false
       var processed = false
 
       const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
       protocolStream.on('handshake', () => {
         const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
-        if (!deduped) onhandshake()
+        if (!deduped) {
+          finishedHandshake = true
+          self._addStream(protocolStream)
+        }
         if (!processed) {
           processed = true
           this._streamsProcessed++
@@ -145,27 +188,11 @@ class CorestoreNetworker extends EventEmitter {
 
       pump(socket, protocolStream, socket, err => {
         if (err) this.emit('replication-error', err)
-        this.streams.delete(protocolStream)
-        if (protocolStream[STREAM_PEER]) {
-          const peer = protocolStream[STREAM_PEER]
-          this.peers.delete(peer)
-          this.emit('peer-remove', peer)
-        } 
+        this._removeStream(protocolStream)
       })
 
       this.emit('stream-opened', protocolStream, info)
       this._streamsProcessing++
-
-      function onhandshake () {
-        finishedHandshake = true
-        self._replicate(protocolStream)
-        self.streams.add(protocolStream)
-        const peer = intoPeer(protocolStream)
-        self.peers.add(peer)
-        protocolStream[STREAM_PEER] = peer
-        self.emit('handshake', protocolStream, info)
-        self.emit('peer-add', peer)
-      }
     })
   }
 
@@ -213,19 +240,30 @@ class CorestoreNetworker extends EventEmitter {
     return this._flushed.has(discoveryKey)
   }
 
+  registerExtension (name, handlers) {
+    if (name && typeof name === 'object') return this.registerExtension(null, name)
+    const ext = new SwarmExtension(this, name || handlers.name, handlers)
+    this._extensions.add(ext)
+    for (const peer of this.peers) {
+      ext.registerExtension(peer)
+    }
+    return ext
+  }
+
   async close () {
     if (!this.swarm) return null
 
     const leaving = [...this._joined].map(dkey => this._leave(dkey))
     await Promise.all(leaving)
 
-    const closingStreams = [...this.streams].map(stream => {
-      return new Promise(resolve => {
-        stream.destroy()
-        eos(stream, () => resolve())
-      })
-    })
-    await Promise.all(closingStreams)
+    for (const ext of this._extensions) {
+      ext.destroy()
+    }
+    this._extensions.clear()
+
+    for (const stream of this.streams) {
+      stream.destroy()
+    }
 
     return new Promise((resolve, reject) => {
       this.swarm.destroy(err => {
@@ -239,10 +277,71 @@ class CorestoreNetworker extends EventEmitter {
 
 module.exports = CorestoreNetworker
 
+class SwarmExtension {
+  constructor (networker, name, opts) {
+    this.networker = networker
+    this.name = name
+    this.encoding = codecs((opts && opts.encoding) || 'binary')
+    this.onmessage = opts.onmessage || noop
+    this.onerror = opts.onerror || noop
+    this._peerExtensions = new Map()
+  }
+
+  _registerExtension (peer) {
+    peer.stream.extensions.exclusive = false
+    const peerExt = peer.stream.registerExtension(this.name, {
+      onmessage: message => {
+        if (!this.onmessage) return
+        if (this.encoding) message = this.encoding.decode(message)
+        this.onmessage(message, peer)
+      },
+      onerror: err => {
+        if (!this.onerror) return
+        this.onerror(err)
+      }
+    })
+    this._peerExtensions.set(peer, peerExt)
+  }
+
+  _unregisterExtension (peer) {
+    if (!this._peerExtensions.has(peer)) return
+    const peerExt = this._peerExtensions.get(peer)
+    peerExt.destroy()
+    this._peerExtensions.delete(peer)
+  }
+
+  broadcast (message) {
+    if (this.encoding) message = this.encoding.encode(message)
+    for (const peerExt of this._peerExtensions.values()) {
+      peerExt.send(message)
+    }
+  }
+
+  send (message, peer) {
+    const peerExt = this._peerExtensions.get(peer)
+    if (!peer) throw new Error('Peer must be specified.')
+    if (!peerExt) throw new Error('Extension not registered for peer ' + peer.remotePublicKey)
+    if (this.encoding) message = this.encoding.encode(message)
+    peerExt.send(message)
+  }
+
+  destroy () {
+    for (const peerExt of this._peerExtensions.values()) {
+      peerExt.destroy()
+    }
+    this._peerExtensions.clear()
+    this.onmessage = null
+    this.onerror = null
+  }
+}
+
 function intoPeer (stream) {
   return {
     remotePublicKey: stream.remotePublicKey,
     remoteAddress: stream.remoteAddress,
-    type: stream.remoteType
+    type: stream.remoteType,
+    stream
   }
 }
+
+function noop () {}

@@ -235,8 +235,52 @@ test('peers are correctly added/removed', async t => {
   t.end()
 })
 
-test.skip('can register stream-wide extensions', async t => {
+test('can register stream-wide extensions', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+  const { networker: networker3 } = await create()
 
+  const froms = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
+  const msgs = ['hello', 'world']
+  let received = 0
+
+  var onmessage = null
+  const allReceivedProm = new Promise(resolve => {
+    onmessage = (msg, from) => {
+      t.true(from.remotePublicKey.equals(froms[received]))
+      t.same(msg, msgs[received])
+      received++
+      if (received === froms.length) return resolve()
+    }
+  })
+
+  const extension = {
+    name: 'test-extension',
+    encoding: 'utf8',
+    onmessage,
+  }
+  networker1.registerExtension(extension)
+  const n2Ext = networker2.registerExtension(extension)
+  const n3Ext = networker3.registerExtension(extension)
+
+  networker2.on('peer-add', peer => {
+    n2Ext.send('hello', peer)
+  })
+  networker3.on('peer-add', peer => {
+    n3Ext.send('world', peer)
+  })
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+  await networker2.configure(dkey, { announce: false, lookup: true, flush: true })
+  await networker3.configure(dkey, { announce: false, lookup: true, flush: true })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await allReceivedProm
+
+  console.log('cleaning up')
+  await cleanup([networker1, networker2, networker3])
+  console.log('cleaned up')
+  t.end()
 })
 
 async function create (opts = {}) {
