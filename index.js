@@ -245,7 +245,7 @@ class CorestoreNetworker extends EventEmitter {
     const ext = new SwarmExtension(this, name || handlers.name, handlers)
     this._extensions.add(ext)
     for (const peer of this.peers) {
-      ext.registerExtension(peer)
+      ext._registerExtension(peer)
     }
     return ext
   }
