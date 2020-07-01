@@ -320,7 +320,7 @@ class SwarmExtension {
   send (message, peer) {
     const peerExt = this._peerExtensions.get(peer)
     if (!peer) throw new Error('Peer must be specified.')
-    if (!peerExt) throw new Error('Extension not registered for peer ' + peer.remotePublicKey)
+    if (!peerExt) throw new Error('Extension not registered for peer ' + peer.remotePublicKey.toString('hex'))
     if (this.encoding) message = this.encoding.encode(message)
     peerExt.send(message)
   }
