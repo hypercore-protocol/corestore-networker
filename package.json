@@ -1,6 +1,6 @@
 {
   "name": "@corestore/networker",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A corestore networking module based on Hyperswarm.",
   "main": "index.js",
   "dependencies": {
