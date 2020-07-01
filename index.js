@@ -282,23 +282,18 @@ class SwarmExtension {
     this.networker = networker
     this.name = name
     this.encoding = codecs((opts && opts.encoding) || 'binary')
+    this._peerExtensions = new Map()
+
     this.onmessage = opts.onmessage
     this.onerror = opts.onerror
-    this._peerExtensions = new Map()
   }
 
   _registerExtension (peer) {
     peer.stream.extensions.exclusive = false
     const peerExt = peer.stream.registerExtension(this.name, {
-      onmessage: message => {
-        if (!this.onmessage) return
-        if (this.encoding) message = this.encoding.decode(message)
-        this.onmessage(message, peer)
-      },
-      onerror: err => {
-        if (!this.onerror) return
-        this.onerror(err)
-      }
+      encoding: this.encoding,
+      onmessage: this.onmessage && (message => this.onmessage(message, peer)),
+      onerror: this.onerror && (err => this.onerror(err))
     })
     this._peerExtensions.set(peer, peerExt)
   }
