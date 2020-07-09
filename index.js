@@ -219,7 +219,7 @@ class CorestoreNetworker extends EventEmitter {
     }
     opts = { ...opts, ...config }
 
-    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : Buffer.from(discoveryKey, 'hex')
+    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : discoveryKey.toString('hex')
     this._configurations.set(keyString, opts)
 
     const joining = config.announce || config.lookup
