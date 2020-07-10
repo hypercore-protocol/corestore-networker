@@ -1,33 +1,36 @@
-# corestore-swarm-networking
-[![Build Status](https://travis-ci.com/andrewosh/corestore-swarm-networking.svg?branch=master)](https://travis-ci.com/andrewosh/corestore-swarm-networking)
+# @corestore/networker
+[![Build Status](https://travis-ci.com/andrewosh/corestore-networker.svg?branch=master)](https://travis-ci.com/andrewosh/corestore-networker)
 
-A corestore networking module that uses [hyperswarm](https://github.com/hyperswarm/network) to discovery peers. This module powers the networking portion of the [Hyperdrive daemon](https://github.com/andrewosh/hyperdrive-daemon).
+A corestore networking module that uses [hyperswarm](https://github.com/hyperswarm/network) to discovery peers. This module powers the networking portion of the [Hyperspace](https://github.com/hyperspace-org/hyperspace).
 
-Calls to `seed` or `unseed` will not be persisted across restarts, so you'll need to use a separate database that maps discovery keys to network configurations. The Hyperdrive daemon uses [Level](https://github.com/level/level) for this.
+Calls to `configure` will not be persisted across restarts, so you'll need to use a separate database that maps discovery keys to network configurations. The Hyperdrive daemon uses [Level](https://github.com/level/level) for this.
 
 Since corestore has an all-to-all replication model (any shared cores between two peers will be automatically replicated), only one connection needs to be maintained per peer. If multiple connections are opened to a single peer as a result of that peer announcing many keys, then these connections will be automatically deduplicated by comparing NOISE keypairs.
 
+### Upgrading from corestore-swarm-networking
+This module's going through a major change + a rename as part of our push to develop [Hyperspace](https://github.com/hyperspace-org/hyperspace). If you've previously been using `corestore-swarm-networking` and you'd like to upgrade, [`UPGRADE.md`](/UPGRADE.MD) explains the changes.
+
 ### Installation
 ```
-npm i corestore-swarm-networking -g
+npm i @corestore/networker
 ```
 
 ### Usage
 ```js
-const SwarmNetworker = require('corestore-swarm-networking')
+const Networker = require('@corestore/networker')
 const Corestore = require('corestore')
 const ram = require('random-access-memory')
 
 const store = new Corestore(ram)
 await store.ready()
 
-const networker = new SwarmNetworker(store)
+const networker = new Networker(store)
 
 // Start announcing or lookup up a discovery key on the DHT.
-await networker.join(discoveryKey, { announce: true, lookup: true })
+await networker.configure(discoveryKey, { announce: true, lookup: true })
 
 // Stop announcing or looking up a discovery key.
-networker.leave(discoveryKey)
+networker.configure(discoveryKey, { announce: false, lookup: false })
 
 // Shut down the swarm (and unnanounce all keys)
 await networker.close()
@@ -35,7 +38,7 @@ await networker.close()
 
 ### API
 
-#### `const networker = new SwarmNetworker(corestore, networkingOptions = {})`
+#### `const networker = new Networker(corestore, networkingOptions = {})`
 Creates a new SwarmNetworker that will open replication streams on the `corestore` instance argument.
 
 `networkOpts` is an options map that can include all [hyperswarm](https://github.com/hyperswarm/hyperswarm) options (which will be passed to the internal swarm instance) as well as:
@@ -46,34 +49,76 @@ Creates a new SwarmNetworker that will open replication streams on the `corestor
 }
 ```
 
-#### `await networker.join(discoveryKey, opts = {})`
-Join the swarm with the `discoveryKey` argument as the topic.
+#### `networker.peers`
+The list of currently-connected peers. Each Peer object has the form:
+```
+{
+  remotePublicKey: 0xabc..., // The remote peer's NOISE key.
+  remoteAddress: '10.23.4...:8080', // The remote peer's host/port.
+  type: 'tcp' | 'utp', // The connection type
+  stream // The connection's HypercoreProtocol stream
+}
+```
 
-If this is the first time a `join` or `leave` has been called, the swarm instance will be created automatically.
+#### `networker.on('peer-add', peer)`
+Emitted when a new connection has been established with `peer`.
 
-Waits for the topic to be fully joined before resolving.
+#### `networker.on('peer-remove', peer)`
+Emitted when `peer`'s connection has been closed.
+
+#### `await networker.configure(discoveryKey, opts = {})`
+Join or leave the swarm with the `discoveryKey` argument as the topic.
+
+If this is the first time `configure` has been called, the swarm instance will be created automatically.
+
+Waits for the topic to be fully joined/left before resolving.
 
 `opts` is an options map of network configuration options that can include:
 ```js
   announce: true, // Announce the discovery key on the swarm
-  lookup: true  // Look up the discovery key on the swarm
+  lookup: true  // Look up the discovery key on the swarm,
+  flush: true // Wait for a complete swarm flush before resolving.
 ```
 
-### `networker.joined(discoveryKey)`
+#### `networker.joined(discoveryKey)`
 Returns `true` if that discovery key is being swarmed.
 
-### `networker.flushed(discoveryKey)`
+#### `networker.flushed(discoveryKey)`
 Returns true if the swarm has discovered and attempted to connect to all peers announcing `discoveryKey`.
 
-#### `await networker.leave(discoveryKey)`
-Stop announcing or looking up the discovery key topic.
+#### `networker.listen()`
+Starts listening for connections on Hyperswarm's default port.
 
-Waits for the key to be fully unannounced before resolving.
+This is called automatically before the first call to `configure`.
 
 #### `await networker.close()`
 Shut down the swarm networker.
 
 This will close all replication streams and then destroy the swarm instance. It will wait for all topics to be unannounced, so it might take some time.
+
+### Swarm Extensions
+`@corestore/networker` introduces stream-level extensions that operate on each connection. They adhere to Hypercore's [extension API](https://github.com/hypercore-protocol/hypercore#ext--feedregisterextensionname-handlers).
+
+#### `const ext = await networker.registerExtension(name, { encoding, onmessage, onerror })`
+Registers an extension with name `name`.
+
+The `onmessage` and `onerror` handlers are both optional methods. `onerror` is an errback, and `onmessage` must have the signature:
+
+```js
+function onmessage (msg, peer) {
+  // `msg` is the (optionally-decoded) message that was received from `peer`.
+  // `peer` is a `Peer` object (described above in `networker.peers`)
+}
+```
+
+#### `ext.send(msg, peer)`
+Send `msg` (which will optionally be encoded by the extension's encoding opt) to `peer`. `peer` must be a Peer object taken from `networker.peers` or emitted by the networker's `peer-add` event.
+
+#### `ext.broadcast(msg)`
+Broadcast `msg` to all currently-connected peers.
+
+#### `ext.destroy()`
+Destroy the extension and unregister it from all connections.
 
 ### License
 MIT
