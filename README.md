@@ -8,7 +8,9 @@ Calls to `configure` will not be persisted across restarts, so you'll need to us
 Since corestore has an all-to-all replication model (any shared cores between two peers will be automatically replicated), only one connection needs to be maintained per peer. If multiple connections are opened to a single peer as a result of that peer announcing many keys, then these connections will be automatically deduplicated by comparing NOISE keypairs.
 
 ### Upgrading from corestore-swarm-networking
-This module's going through a major change + a rename as part of our push to develop [Hyperspace](https://github.com/hyperspace-org/hyperspace). If you've previously been using `corestore-swarm-networking` and you'd like to upgrade, [`UPGRADE.md`](https://github.com/andrewosh/corestore-swarm-networking/blob/master/UPGRADE.md) explains the changes.
+This module's going through a major change + a rename as part of our push to develop [Hyperspace](https://github.com/hyperspace-org/hyperspace). With these updates, `@corestore/networker` and Hyperspace's `network` APIs are now interchangeable! 
+
+If you've previously been using `corestore-swarm-networking` and you'd like to upgrade, [`UPGRADE.md`](https://github.com/andrewosh/corestore-swarm-networking/blob/master/UPGRADE.md) explains the changes.
 
 ### Installation
 ```
