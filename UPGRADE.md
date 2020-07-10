@@ -1,3 +1,5 @@
+## `@corestore/networker` v1.0.0
+
 If you're migrating from `corestore-swarm-networking` v5 to `@corestore/networker` v1, there have been a few breaking changes to be aware of:
 
 #### `join`/`leave` -> `configure`
