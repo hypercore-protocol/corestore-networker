@@ -1,4 +1,4 @@
-# @corestore/networker
+# `@corestore/networker`
 [![Build Status](https://travis-ci.com/andrewosh/corestore-networker.svg?branch=master)](https://travis-ci.com/andrewosh/corestore-networker)
 
 A corestore networking module that uses [hyperswarm](https://github.com/hyperswarm/network) to discovery peers. This module powers the networking portion of the [Hyperspace](https://github.com/hyperspace-org/hyperspace).
