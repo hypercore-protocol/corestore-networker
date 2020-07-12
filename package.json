@@ -8,6 +8,7 @@
     "end-of-stream": "^1.4.4",
     "hypercore-protocol": "^8.0.0",
     "hyperswarm": "^2.14.1",
+    "nanoresource-promise": "^1.2.2",
     "pump": "^3.0.0"
   },
   "devDependencies": {

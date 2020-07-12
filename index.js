@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const { EventEmitter } = require('events')
 const { promisify } = require('util')
 
+const { NanoresourcePromise: Nanoresource } = require('nanoresource-promise/emitter')
 const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
 const codecs = require('codecs')
@@ -13,7 +14,7 @@ const log = require('debug')('corestore:network')
 const OUTER_STREAM = Symbol('networker-outer-stream')
 const STREAM_PEER = Symbol('networker-stream-peer')
 
-class CorestoreNetworker extends EventEmitter {
+class CorestoreNetworker extends Nanoresource {
   constructor (corestore, opts = {}) {
     super()
     this.corestore = corestore
@@ -145,7 +146,7 @@ class CorestoreNetworker extends EventEmitter {
     }
   }
 
-  listen () {
+  _open () {
     const self = this
     if (this.swarm) return
 
@@ -194,6 +195,10 @@ class CorestoreNetworker extends EventEmitter {
       this.emit('stream-opened', protocolStream, info)
       this._streamsProcessing++
     })
+  }
+
+  listen () {
+    return this.open()
   }
 
   status (discoveryKey) {
@@ -250,11 +255,8 @@ class CorestoreNetworker extends EventEmitter {
     return ext
   }
 
-  async close () {
+  async _close () {
     if (!this.swarm) return null
-
-    const leaving = [...this._joined].map(dkey => this._leave(dkey))
-    await Promise.all(leaving)
 
     for (const ext of this._extensions) {
       ext.destroy()
