@@ -197,6 +197,27 @@ class CorestoreNetworker extends Nanoresource {
     })
   }
 
+  async _close () {
+    if (!this.swarm) return null
+
+    for (const ext of this._extensions) {
+      ext.destroy()
+    }
+    this._extensions.clear()
+
+    for (const stream of this.streams) {
+      stream.destroy()
+    }
+
+    return new Promise((resolve, reject) => {
+      this.swarm.destroy(err => {
+        if (err) return reject(err)
+        this.swarm = null
+        return resolve()
+      })
+    })
+  }
+
   listen () {
     return this.open()
   }
@@ -213,7 +234,7 @@ class CorestoreNetworker extends Nanoresource {
   async configure (discoveryKey, opts = {}) {
     if (this.swarm && this.swarm.destroyed) return null
     if (!this.swarm) {
-      this.listen()
+      await this.listen()
       return this.configure(discoveryKey, opts)
     }
     const self = this
@@ -255,26 +276,6 @@ class CorestoreNetworker extends Nanoresource {
     return ext
   }
 
-  async _close () {
-    if (!this.swarm) return null
-
-    for (const ext of this._extensions) {
-      ext.destroy()
-    }
-    this._extensions.clear()
-
-    for (const stream of this.streams) {
-      stream.destroy()
-    }
-
-    return new Promise((resolve, reject) => {
-      this.swarm.destroy(err => {
-        if (err) return reject(err)
-        this.swarm = null
-        return resolve()
-      })
-    })
-  }
 }
 
 module.exports = CorestoreNetworker
