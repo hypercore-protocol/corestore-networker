@@ -1,11 +1,9 @@
-const crypto = require('crypto')
-const { promisify } = require('util')
-
 const { NanoresourcePromise: Nanoresource } = require('nanoresource-promise/emitter')
 const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
 const codecs = require('codecs')
 const pump = require('pump')
+const maybe = require('call-me-maybe')
 
 const STREAM_PEER = Symbol('networker-stream-peer')
 
@@ -13,12 +11,10 @@ class CorestoreNetworker extends Nanoresource {
   constructor (corestore, opts = {}) {
     super()
     this.corestore = corestore
-    this.id = opts.id || crypto.randomBytes(32)
     this.opts = opts
     this.keyPair = opts.keyPair || HypercoreProtocol.keyPair()
 
     this._replicationOpts = {
-      id: this.id,
       encrypt: true,
       live: true,
       keyPair: this.keyPair
@@ -61,7 +57,12 @@ class CorestoreNetworker extends Nanoresource {
       lookup: opts.lookup
     })
     if (opts.flush !== false) {
-      await promisify(this.swarm.flush.bind(this.swarm))()
+      await new Promise((resolve, reject) => {
+        this.swarm.flush(err => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
       if (!this._joined.has(keyString)) {
         return
       }
@@ -221,12 +222,18 @@ class CorestoreNetworker extends Nanoresource {
   }
 
   allStatuses () {
-    return this._configurations
+    return [ ...this._configurations].map(([k, v]) => {
+      return {
+        discoveryKey: Buffer.from(k, 'hex'),
+        announce: v.announce,
+        lookup: v.lookup
+      }
+    })
   }
 
-  configure (discoveryKey, opts = {}) {
+  configure (discoveryKey, opts = {}, cb) {
     if (!this.swarm) this.open() // it is sync, which makes this easier below inregards to race conditions
-    if (this.swarm && this.swarm.destroyed) return Promise.resolve()
+    if (this.swarm && this.swarm.destroyed) return maybeOptional(cb, Promise.resolve())
 
     const id = Symbol('id')
     const prom = this._configure(discoveryKey, opts, id, false)
@@ -237,10 +244,16 @@ class CorestoreNetworker extends Nanoresource {
     prom.discoveryKey = discoveryKey
     prom.previous = prev
 
+    maybeOptional(cb, prom)
+
     return prom
   }
 
-  async unconfigure (prom) {
+  unconfigure (prom, cb) {
+    return maybeOptional(cb, this._unconfigure(prom))
+  }
+
+  async _unconfigure (prom) {
     if (this.swarm && this.swarm.destroyed) return null
     if (!this.swarm) {
       await this.listen()
@@ -364,4 +377,12 @@ function intoPeer (stream) {
 
 function toString (dk) {
   return typeof dk === 'string' ? dk : dk.toString('hex')
+}
+
+function noop () {}
+
+function maybeOptional (cb, prom) {
+  if (cb) maybe(cb, prom)
+  else prom.catch(noop)
+  return prom
 }
