@@ -222,68 +222,37 @@ class CorestoreNetworker extends Nanoresource {
   }
 
   allStatuses () {
-    return [ ...this._configurations].map(([k, v]) => {
+    return [...this._configurations].map(([k, v]) => {
       return {
         discoveryKey: Buffer.from(k, 'hex'),
-        announce: v.announce,
-        lookup: v.lookup
+        ...v
       }
     })
   }
 
   configure (discoveryKey, opts = {}, cb) {
-    if (!this.swarm) this.open() // it is sync, which makes this easier below inregards to race conditions
-    if (this.swarm && this.swarm.destroyed) return maybeOptional(cb, Promise.resolve())
-
-    const id = Symbol('id')
-    const prom = this._configure(discoveryKey, opts, id, false)
-    const keyString = toString(discoveryKey)
-    const prev = this._configurations.get(keyString) || { lookup: false, announce: false, id: null }
-
-    prom.configureId = id
-    prom.discoveryKey = discoveryKey
-    prom.previous = prev
-
-    maybeOptional(cb, prom)
-
-    return prom
+    return maybeOptional(cb, this._configure(discoveryKey, opts))
   }
 
-  unconfigure (prom, cb) {
-    return maybeOptional(cb, this._unconfigure(prom))
-  }
+  async _configure (discoveryKey, opts) {
+    if (!this.swarm) await this.open()
+    if (this.swarm && this.swarm.destroyed) return
 
-  async _unconfigure (prom) {
-    if (this.swarm && this.swarm.destroyed) return null
-    if (!this.swarm) {
-      await this.listen()
-      return this.unconfigure(prom)
-    }
-
-    const discoveryKey = prom.discoveryKey
-    const keyString = toString(discoveryKey)
-    const conf = this._configurations.get(keyString)
-
-    if (!conf || conf.id !== prom.configureId) return
-    return this._configure(discoveryKey, prom.previous, prom.previous.id, true)
-  }
-
-  async _configure (discoveryKey, opts, id, isUnconfigure) {
     const config = {
       announce: opts.announce !== false,
       lookup: opts.lookup !== false
     }
-    opts = { ...opts, ...config, id }
+    opts = { ...opts, ...config }
 
     const keyString = toString(discoveryKey)
-    const current = this._configurations.get(keyString)
+    const prev = this._configurations.get(keyString)
+    const joining = config.announce || config.lookup
 
-    if (id) this._configurations.set(keyString, opts)
+    if (joining) this._configurations.set(keyString, opts)
     else this._configurations.delete(keyString)
 
-    const joining = config.announce || config.lookup
     if (joining) {
-      if (isUnconfigure && current && current.lookup === config.lookup && current.announce === config.announce) return
+      if (opts.rejoin === false && prev && prev.lookup === config.lookup && prev.announce === config.announce) return
       return this._join(discoveryKey, opts)
     } else {
       return this._leave(discoveryKey)
