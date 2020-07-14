@@ -229,7 +229,7 @@ class CorestoreNetworker extends Nanoresource {
     if (this.swarm && this.swarm.destroyed) return Promise.resolve()
 
     const id = Symbol('id')
-    const prom = this._configure(discoveryKey, opts, id)
+    const prom = this._configure(discoveryKey, opts, id, false)
     const keyString = toString(discoveryKey)
     const prev = this._configurations.get(keyString) || { lookup: false, announce: false, id: null }
 
@@ -252,10 +252,10 @@ class CorestoreNetworker extends Nanoresource {
     const conf = this._configurations.get(keyString)
 
     if (!conf || conf.id !== prom.configureId) return
-    return this._configure(discoveryKey, prom.previous, prom.previous.id)
+    return this._configure(discoveryKey, prom.previous, prom.previous.id, true)
   }
 
-  async _configure (discoveryKey, opts = {}, id) {
+  async _configure (discoveryKey, opts, id, isUnconfigure) {
     const config = {
       announce: opts.announce !== false,
       lookup: opts.lookup !== false
@@ -263,12 +263,14 @@ class CorestoreNetworker extends Nanoresource {
     opts = { ...opts, ...config, id }
 
     const keyString = toString(discoveryKey)
+    const current = this._configurations.get(keyString)
 
     if (id) this._configurations.set(keyString, opts)
     else this._configurations.delete(keyString)
 
     const joining = config.announce || config.lookup
     if (joining) {
+      if (isUnconfigure && current && current.lookup === config.lookup && current.announce === config.announce) return
       return this._join(discoveryKey, opts)
     } else {
       return this._leave(discoveryKey)
