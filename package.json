@@ -4,6 +4,7 @@
   "description": "A corestore networking module based on Hyperswarm.",
   "main": "index.js",
   "dependencies": {
+    "call-me-maybe": "^1.0.1",
     "codecs": "^2.1.0",
     "hypercore-protocol": "^8.0.0",
     "hyperswarm": "^2.14.1",
