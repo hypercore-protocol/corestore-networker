@@ -87,7 +87,7 @@ test('replicate sub-cores', async t => {
   await networker2.configure(core3.discoveryKey)
 
   const core2 = store1.get({ parents: [core1.key] })
-  const core4 = store2.get({ key: core2.key, parents: [core3.key]})
+  const core4 = store2.get({ key: core2.key, parents: [core3.key] })
 
   await append(core1, 'hello')
   await append(core2, 'world')
@@ -257,7 +257,7 @@ test('can register stream-wide extensions', async t => {
   const extension = {
     name: 'test-extension',
     encoding: 'utf8',
-    onmessage,
+    onmessage
   }
   networker1.registerExtension(extension)
   const n2Ext = networker2.registerExtension(extension)
@@ -308,7 +308,7 @@ test('can register extensions with the same name', async t => {
   const extensionTwo = {
     name: 'test-extension',
     encoding: 'utf8',
-    onmessage,
+    onmessage
   }
   networker1.registerExtension(extensionOne)
   networker1.registerExtension(extensionTwo)
@@ -406,9 +406,9 @@ async function create (opts = {}) {
       return bootstrap.once('listening', resolve)
     })
   }
-  const store =  new Corestore(ram)
+  const store = new Corestore(ram)
   await store.ready()
-  const networker = new CorestoreNetworker(store,  { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
+  const networker = new CorestoreNetworker(store, { ...opts, bootstrap: `localhost:${BOOTSTRAP_PORT}` })
   return { store, networker }
 }
 
@@ -431,7 +431,7 @@ function get (core, idx, opts = {}) {
 }
 
 async function cleanup (networkers) {
-  for (let networker of networkers) {
+  for (const networker of networkers) {
     await networker.close()
   }
   if (bootstrap) {

@@ -1,5 +1,4 @@
 const crypto = require('crypto')
-const { EventEmitter } = require('events')
 const { promisify } = require('util')
 
 const { NanoresourcePromise: Nanoresource } = require('nanoresource-promise/emitter')
@@ -7,11 +6,7 @@ const HypercoreProtocol = require('hypercore-protocol')
 const hyperswarm = require('hyperswarm')
 const codecs = require('codecs')
 const pump = require('pump')
-const eos = require('end-of-stream')
 
-const log = require('debug')('corestore:network')
-
-const OUTER_STREAM = Symbol('networker-outer-stream')
 const STREAM_PEER = Symbol('networker-stream-peer')
 
 class CorestoreNetworker extends Nanoresource {
@@ -56,7 +51,7 @@ class CorestoreNetworker extends Nanoresource {
   }
 
   async _join (discoveryKey, opts = {}) {
-    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : discoveryKey.toString('hex')
+    const keyString = toString(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : Buffer.from(discoveryKey, 'hex')
 
     this._joined.add(keyString)
@@ -76,7 +71,7 @@ class CorestoreNetworker extends Nanoresource {
         this.emit('flushed', keyBuf)
       } else {
         // Wait until the stream processing has caught up.
-        const processedListener =  () => {
+        const processedListener = () => {
           if (!this._joined.has(keyString)) {
             this.removeListener('stream-processed', processedListener)
             return
@@ -93,7 +88,7 @@ class CorestoreNetworker extends Nanoresource {
   }
 
   async _leave (discoveryKey) {
-    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : discoveryKey.toString('hex')
+    const keyString = toString(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : Buffer.from(discoveryKey, 'hex')
 
     this._joined.delete(keyString)
@@ -105,7 +100,7 @@ class CorestoreNetworker extends Nanoresource {
       })
     })
 
-    for (let stream of this.streams) {
+    for (const stream of this.streams) {
       stream.close(keyBuf)
     }
   }
@@ -159,8 +154,6 @@ class CorestoreNetworker extends Nanoresource {
     this.swarm.on('connection', (socket, info) => {
       const isInitiator = !!info.client
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
-      const peerInfo = info.peer
-      const discoveryKey = peerInfo && peerInfo.topic
 
       var finishedHandshake = false
       var processed = false
@@ -231,22 +224,48 @@ class CorestoreNetworker extends Nanoresource {
     return this._configurations
   }
 
-  async configure (discoveryKey, opts = {}) {
+  configure (discoveryKey, opts = {}) {
+    if (!this.swarm) this.open() // it is sync, which makes this easier below inregards to race conditions
+    if (this.swarm && this.swarm.destroyed) return Promise.resolve()
+
+    const id = Symbol('id')
+    const prom = this._configure(discoveryKey, opts, id)
+    const keyString = toString(discoveryKey)
+    const prev = this._configurations.get(keyString) || { lookup: false, announce: false, id: null }
+
+    prom.configureId = id
+    prom.discoveryKey = discoveryKey
+    prom.previous = prev
+
+    return prom
+  }
+
+  async unconfigure (prom) {
     if (this.swarm && this.swarm.destroyed) return null
     if (!this.swarm) {
       await this.listen()
-      return this.configure(discoveryKey, opts)
+      return this.unconfigure(prom)
     }
-    const self = this
 
+    const discoveryKey = prom.discoveryKey
+    const keyString = toString(discoveryKey)
+    const conf = this._configurations.get(keyString)
+
+    if (!conf || conf.id !== prom.configureId) return
+    return this._configure(discoveryKey, prom.previous, prom.previous.id)
+  }
+
+  async _configure (discoveryKey, opts = {}, id) {
     const config = {
       announce: opts.announce !== false,
       lookup: opts.lookup !== false
     }
-    opts = { ...opts, ...config }
+    opts = { ...opts, ...config, id }
 
-    const keyString = (typeof discoveryKey === 'string') ? discoveryKey : discoveryKey.toString('hex')
-    this._configurations.set(keyString, opts)
+    const keyString = toString(discoveryKey)
+
+    if (id) this._configurations.set(keyString, opts)
+    else this._configurations.delete(keyString)
 
     const joining = config.announce || config.lookup
     if (joining) {
@@ -275,7 +294,6 @@ class CorestoreNetworker extends Nanoresource {
     }
     return ext
   }
-
 }
 
 module.exports = CorestoreNetworker
@@ -342,4 +360,6 @@ function intoPeer (stream) {
   }
 }
 
-function noop () {}
+function toString (dk) {
+  return typeof dk === 'string' ? dk : dk.toString('hex')
+}
