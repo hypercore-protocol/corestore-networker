@@ -56,7 +56,12 @@ class CorestoreNetworker extends Nanoresource {
       announce: opts.announce,
       lookup: opts.lookup
     })
-    if (opts.flush !== false) {
+
+    const flushedProm = flush.bind(this)()
+    if (opts.flush !== false) await flushedProm
+    else flushedProm.catch(() => {})
+
+    async function flush () {
       await new Promise((resolve, reject) => {
         this.swarm.flush(err => {
           if (err) reject(err)
@@ -235,7 +240,7 @@ class CorestoreNetworker extends Nanoresource {
   }
 
   async _configure (discoveryKey, opts) {
-    if (!this.swarm) await this.open()
+    if (!this.swarm) this.open()
     if (this.swarm && this.swarm.destroyed) return
 
     const config = {
