@@ -46,6 +46,37 @@ class CorestoreNetworker extends Nanoresource {
     })
   }
 
+  async _flush (keyString, keyBuf) {
+    await new Promise((resolve, reject) => {
+      this.swarm.flush(err => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
+    if (!this._joined.has(keyString)) {
+      return
+    }
+    const processingAfterFlush = this._streamsProcessing
+    if (this._streamsProcessed >= processingAfterFlush) {
+      this._flushed.add(keyString)
+      this.emit('flushed', keyBuf)
+    } else {
+      // Wait until the stream processing has caught up.
+      const processedListener = () => {
+        if (!this._joined.has(keyString)) {
+          this.removeListener('stream-processed', processedListener)
+          return
+        }
+        if (this._streamsProcessed >= processingAfterFlush) {
+          this._flushed.add(keyString)
+          this.emit('flushed', keyBuf)
+          this.removeListener('stream-processed', processedListener)
+        }
+      }
+      this.on('stream-processed', processedListener)
+    }
+  }
+
   async _join (discoveryKey, opts = {}) {
     const keyString = toString(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : Buffer.from(discoveryKey, 'hex')
@@ -57,40 +88,9 @@ class CorestoreNetworker extends Nanoresource {
       lookup: opts.lookup
     })
 
-    const flushedProm = flush.bind(this)()
+    const flushedProm = this._flush(keyString, keyBuf)
     if (opts.flush !== false) await flushedProm
     else flushedProm.catch(() => {})
-
-    async function flush () {
-      await new Promise((resolve, reject) => {
-        this.swarm.flush(err => {
-          if (err) reject(err)
-          else resolve()
-        })
-      })
-      if (!this._joined.has(keyString)) {
-        return
-      }
-      const processingAfterFlush = this._streamsProcessing
-      if (this._streamsProcessed >= processingAfterFlush) {
-        this._flushed.add(keyString)
-        this.emit('flushed', keyBuf)
-      } else {
-        // Wait until the stream processing has caught up.
-        const processedListener = () => {
-          if (!this._joined.has(keyString)) {
-            this.removeListener('stream-processed', processedListener)
-            return
-          }
-          if (this._streamsProcessed >= processingAfterFlush) {
-            this._flushed.add(keyString)
-            this.emit('flushed', keyBuf)
-            this.removeListener('stream-processed', processedListener)
-          }
-        }
-        this.on('stream-processed', processedListener)
-      }
-    }
   }
 
   async _leave (discoveryKey) {
