@@ -289,6 +289,7 @@ module.exports = CorestoreNetworker
 
 class SwarmExtension {
   constructor (networker, name, opts) {
+    if (typeof opts === 'function') opts = opts(this)
     this.networker = networker
     this.name = name
     this.encoding = codecs((opts && opts.encoding) || 'binary')
@@ -316,7 +317,6 @@ class SwarmExtension {
   }
 
   broadcast (message) {
-    if (this.encoding) message = this.encoding.encode(message)
     for (const peerExt of this._peerExtensions.values()) {
       peerExt.send(message)
     }
@@ -326,7 +326,6 @@ class SwarmExtension {
     const peerExt = this._peerExtensions.get(peer)
     if (!peer) throw new Error('Peer must be specified.')
     if (!peerExt) throw new Error('Extension not registered for peer ' + peer.remotePublicKey.toString('hex'))
-    if (this.encoding) message = this.encoding.encode(message)
     peerExt.send(message)
   }
 
