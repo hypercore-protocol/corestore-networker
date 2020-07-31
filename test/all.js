@@ -333,6 +333,99 @@ test('can register extensions with the same name', async t => {
   t.end()
 })
 
+test('can register function based extensions', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+  const { networker: networker3 } = await create()
+
+  const froms = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
+  const msgs = ['hello', 'world']
+  let received = 0
+
+  var onmessage = null
+  const allReceivedProm = new Promise(resolve => {
+    onmessage = (msg, from) => {
+      t.true(from.remotePublicKey.equals(froms[received]))
+      t.same(msg, msgs[received])
+      received++
+      if (received === froms.length) return resolve()
+    }
+  })
+
+  const extension = (ext) => ({
+    encoding: 'utf8',
+    onmessage
+  })
+
+  // Note: Must use name outside of the function handler for now
+  networker1.registerExtension('test-extension', extension)
+  const n2Ext = networker2.registerExtension('test-extension', extension)
+  const n3Ext = networker3.registerExtension('test-extension', extension)
+
+  networker2.on('peer-add', peer => {
+    n2Ext.send('hello', peer)
+  })
+  networker3.on('peer-add', peer => {
+    n3Ext.send('world', peer)
+  })
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+  await networker2.configure(dkey, { announce: false, lookup: true, flush: true })
+  await networker3.configure(dkey, { announce: false, lookup: true, flush: true })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await allReceivedProm
+
+  await cleanup([networker1, networker2, networker3])
+  t.end()
+})
+
+test('can use other encodings', async t => {
+  const { networker: networker1 } = await create()
+  const { networker: networker2 } = await create()
+  const { networker: networker3 } = await create()
+
+  const froms = [networker2.keyPair.publicKey, networker3.keyPair.publicKey]
+  const msgs = [{ message: 'hello' }, { message: 'world' }]
+  let received = 0
+
+  var onmessage = null
+  const allReceivedProm = new Promise(resolve => {
+    onmessage = (msg, from) => {
+      t.true(from.remotePublicKey.equals(froms[received]))
+      t.same(msg, msgs[received])
+      received++
+      if (received === froms.length) return resolve()
+    }
+  })
+
+  const extension = {
+    name: 'test-extension',
+    encoding: 'json',
+    onmessage
+  }
+  networker1.registerExtension(extension)
+  const n2Ext = networker2.registerExtension(extension)
+  const n3Ext = networker3.registerExtension(extension)
+
+  networker2.on('peer-add', peer => {
+    n2Ext.send({ message: 'hello' }, peer)
+  })
+  networker3.on('peer-add', peer => {
+    n3Ext.send({ message: 'world' }, peer)
+  })
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+  await networker2.configure(dkey, { announce: false, lookup: true, flush: true })
+  await networker3.configure(dkey, { announce: false, lookup: true, flush: true })
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await allReceivedProm
+
+  await cleanup([networker1, networker2, networker3])
+  t.end()
+})
+
 test('bidirectional extension send/receive', async t => {
   const { networker: networker1 } = await create()
   const { networker: networker2 } = await create()
