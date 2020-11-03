@@ -93,22 +93,18 @@ class CorestoreNetworker extends Nanoresource {
     else flushedProm.catch(() => {})
   }
 
-  async _leave (discoveryKey) {
+  _leave (discoveryKey) {
     const keyString = toString(discoveryKey)
     const keyBuf = (discoveryKey instanceof Buffer) ? discoveryKey : Buffer.from(discoveryKey, 'hex')
 
     this._joined.delete(keyString)
 
-    await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       this.swarm.leave(keyBuf, err => {
         if (err) return reject(err)
         return resolve()
       })
     })
-
-    for (const stream of this.streams) {
-      stream.close(keyBuf)
-    }
   }
 
   _registerAllExtensions (peer) {
