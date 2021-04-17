@@ -489,6 +489,25 @@ test('bidirectional extension send/receive', async t => {
   t.end()
 })
 
+test.only('onauthentication hook', async t => {
+  t.plan(2)
+  const { networker: networker1 } = await create({
+    onauthenticate (peerPublicKey, cb) {
+      t.deepEquals(peerPublicKey, networker2.keyPair.publicKey)
+      cb()
+    }
+  })
+  const { networker: networker2 } = await create()
+
+  const dkey = hypercoreCrypto.randomBytes(32)
+  await networker1.configure(dkey)
+  await networker2.configure(dkey)
+
+  await new Promise(resolve => setTimeout(resolve, 100))
+  await cleanup([networker1, networker2])
+  t.end()
+})
+
 async function create (opts = {}) {
   if (!bootstrap) {
     bootstrap = dht({
