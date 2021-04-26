@@ -489,7 +489,7 @@ test('bidirectional extension send/receive', async t => {
   t.end()
 })
 
-test.only('onauthentication hook', async t => {
+test('onauthentication hook', async t => {
   t.plan(2)
   const { networker: networker1 } = await create({
     onauthenticate (peerPublicKey, cb) {
