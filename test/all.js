@@ -508,6 +508,102 @@ test('onauthentication hook', async t => {
   t.end()
 })
 
+test.only('onfeedauthentication hook blocks replication in either direction', async t => {
+  const keyPair1 = HypercoreProtocol.keyPair()
+  const keyPair2 = HypercoreProtocol.keyPair()
+  const { increment, done: allAuthenticationDone } = countTo(6)
+  const passedAuthentications = {}
+  const { networker: networker1, store: store1 } = await create({
+    keyPair: keyPair1,
+    onfeedauthenticate
+  })
+  const { networker: networker2, store: store2 } = await create({
+    keyPair: keyPair2,
+    onfeedauthenticate
+  })
+  const core1a = store1.get()
+  await append(core1a, 'a')
+  const core1b = store1.get()
+  await append(core1b, 'b')
+  const core1c = store1.get()
+  await append(core1c, 'c')
+  const core2a = store2.get({ key: core1a.key })
+  const core2b = store2.get({ key: core1b.key })
+  const core2c = store2.get({ key: core1c.key })
+
+  await networker1.configure(core1a.discoveryKey)
+  await networker1.configure(core1b.discoveryKey)
+  await networker1.configure(core1c.discoveryKey)
+  await networker2.configure(core2a.discoveryKey)
+  await networker2.configure(core2b.discoveryKey)
+  await networker2.configure(core2c.discoveryKey)
+
+  await allAuthenticationDone
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  t.equals(core2a.length, 1, 'replicated core2a')
+  t.equals(core2b.length, 0, 'blocked replication of core2b')
+  t.equals(core2c.length, 0, 'blocked replication of core2c')
+  await cleanup([networker1, networker2])
+  t.end()
+
+  function onfeedauthenticate (feed, peerPublicKey, cb) {
+    const remotePeer =
+      Buffer.compare(peerPublicKey, keyPair1.publicKey) === 0 ? 1 :
+      Buffer.compare(peerPublicKey, keyPair2.publicKey) === 0 ? 2 :
+      0
+
+    if (remotePeer === 0) {
+      t.fail('unexpeced key:' + peerPublicKey)
+      return
+    }
+
+    const core = 
+      remotePeer === 2 ? (
+        feed === core1a ? 'a' :
+        feed === core1b ? 'b' :
+        feed === core1c ? 'c' :
+        null
+      ) :
+      remotePeer === 1 ? (
+        feed === core2a ? 'a' :
+        feed === core2b ? 'b' :
+        feed === core2c ? 'c' :
+        null
+      ) :
+      null
+    
+    if (core === null) {
+      t.fail('unexpected feed:' + feed + ' for key ' + peerPublicKey)
+      return
+    }
+    const id = `core${remotePeer}${core}`
+    const error = (id === 'core1b' || id === 'core2c') ? new Error('prevent replication') : null
+    if (!passedAuthentications[id]) {
+      passedAuthentications[id] = true
+      t.pass(`${id}: ${error ? 'error': 'ok'}`)
+      increment()
+    }
+    cb(error)
+  }
+
+  function countTo (amount) {
+    let counted = 0
+    let _resolve
+    return {
+      done: new Promise(resolve => { _resolve = resolve }),
+      increment: () => {
+        counted += 1
+        if (counted === amount) {
+          _resolve()
+        } else if (counted > amount) {
+          t.fail('unexpected amount of calls')
+        }
+      }
+    }
+  }
+})
+
 async function create (opts = {}) {
   if (!bootstrap) {
     bootstrap = dht({

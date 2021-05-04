@@ -49,6 +49,7 @@ Creates a new SwarmNetworker that will open replication streams on the `corestor
   id: crypto.randomBytes(32), // A randomly-generated peer ID,
   keyPair: HypercoreProtocol.keyPair(), // A NOISE keypair that's used across all connections.
   onauthenticate: (remotePublicKey, cb) => { cb() }, // A NOISE keypair authentication hook
+  onfeedauthenticate: (feed, remotePublicKey, cb) => { cb() }, // A NOISE protocol authentication hook per feed
 }
 ```
 
