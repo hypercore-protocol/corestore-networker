@@ -18,7 +18,8 @@ class CorestoreNetworker extends Nanoresource {
       encrypt: true,
       live: true,
       keyPair: this.keyPair,
-      onauthenticate: opts.onauthenticate
+      onauthenticate: opts.onauthenticate,
+      onfeedauthenticate: opts.onfeedauthenticate
     }
 
     this.streams = new Set()
