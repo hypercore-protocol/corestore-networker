@@ -19,6 +19,9 @@
     "standard": "^12.0.1",
     "tape": "^4.9.0"
   },
+  "browser": {
+    "hyperswarm": false
+  },
   "scripts": {
     "test": "tape test/*.js"
   },
