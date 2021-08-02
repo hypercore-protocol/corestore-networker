@@ -33,8 +33,8 @@ class CorestoreNetworker extends Nanoresource {
     this._streamsProcessing = 0
     this._streamsProcessed = 0
 
-    // Set in listen
-    this.swarm = null
+    // Passed in, or set in listen
+    this.swarm = opts.swarm || null
 
     this.setMaxListeners(0)
   }
