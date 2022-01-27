@@ -33,9 +33,6 @@ class CorestoreNetworker extends Nanoresource {
     this._streamsProcessing = 0
     this._streamsProcessed = 0
 
-    // Passed in, or set in listen
-    this.swarm = opts.swarm || null
-
     this.setMaxListeners(0)
   }
 
@@ -148,7 +145,7 @@ class CorestoreNetworker extends Nanoresource {
     const self = this
     if (this.swarm) return
 
-    this.swarm = hyperswarm({
+    this.swarm = this.opts.swarm || hyperswarm({
       ...this.opts,
       announceLocalNetwork: true,
       queue: { multiplex: true }
