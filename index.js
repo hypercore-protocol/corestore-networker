@@ -1,8 +1,7 @@
 const { NanoresourcePromise: Nanoresource } = require('nanoresource-promise/emitter')
 const HypercoreProtocol = require('hypercore-protocol')
-const hyperswarm = require('hyperswarm')
+const Hyperswarm = require('hyperswarm')
 const codecs = require('codecs')
-const pump = require('pump')
 const maybe = require('call-me-maybe')
 
 const STREAM_PEER = Symbol('networker-stream-peer')
@@ -36,21 +35,8 @@ class CorestoreNetworker extends Nanoresource {
     this.setMaxListeners(0)
   }
 
-  _replicate (protocolStream) {
-    // The initiator parameter here is ignored, since we're passing in a stream.
-    this.corestore.replicate(false, {
-      ...this._replicationOpts,
-      stream: protocolStream
-    })
-  }
-
   async _flush (keyString, keyBuf) {
-    await new Promise((resolve, reject) => {
-      this.swarm.flush(err => {
-        if (err) reject(err)
-        else resolve()
-      })
-    })
+    await this.swarm.flush()
     if (!this._joined.has(keyString)) {
       return
     }
@@ -83,7 +69,11 @@ class CorestoreNetworker extends Nanoresource {
     this.emit('joined', keyBuf)
     this.swarm.join(keyBuf, {
       announce: opts.announce,
-      lookup: opts.lookup
+      lookup: opts.lookup,
+      // TODO: Remove 'server'/'client' if Hyperswarm reverted back to 'announce' and 'lookup'
+      // https://github.com/hyperswarm/hyperswarm/issues/95#issuecomment-1010025283
+      server: opts.announce,
+      client: opts.lookup
     })
 
     const flushedProm = this._flush(keyString, keyBuf)
@@ -118,7 +108,6 @@ class CorestoreNetworker extends Nanoresource {
   }
 
   _addStream (stream) {
-    this._replicate(stream)
     this.streams.add(stream)
 
     const peer = intoPeer(stream)
@@ -145,48 +134,21 @@ class CorestoreNetworker extends Nanoresource {
     const self = this
     if (this.swarm) return
 
-    this.swarm = this.opts.swarm || hyperswarm({
-      ...this.opts,
-      announceLocalNetwork: true,
-      queue: { multiplex: true }
+    this.swarm = this.opts.swarm || new Hyperswarm({
+      ...this.opts
     })
-    this.swarm.on('error', err => this.emit('error', err))
+    this.swarm.on('error', (err) => this.emit('error', err))
     this.swarm.on('connection', (socket, info) => {
       const isInitiator = !!info.client
+      // Why is this necessary?
       if (socket.remoteAddress === '::ffff:127.0.0.1' || socket.remoteAddress === '127.0.0.1') return null
 
-      var finishedHandshake = false
-      var processed = false
+      socket.pipe(this.corestore.replicate(isInitiator)).pipe(socket)
 
-      const protocolStream = new HypercoreProtocol(isInitiator, { ...this._replicationOpts })
-      protocolStream.on('handshake', () => {
-        const deduped = info.deduplicate(protocolStream.publicKey, protocolStream.remotePublicKey)
-        if (!deduped) {
-          finishedHandshake = true
-          self._addStream(protocolStream)
-        }
-        if (!processed) {
-          processed = true
-          this._streamsProcessed++
-          this.emit('stream-processed')
-        }
-      })
-      protocolStream.on('close', () => {
-        this.emit('stream-closed', protocolStream, info, finishedHandshake)
-        if (!processed) {
-          processed = true
-          this._streamsProcessed++
-          this.emit('stream-processed')
-        }
-      })
+      self._addStream(socket)
 
-      pump(socket, protocolStream, socket, err => {
-        if (err) this.emit('replication-error', err)
-        this._removeStream(protocolStream)
-      })
-
-      this.emit('stream-opened', protocolStream, info)
-      this._streamsProcessing++
+      socket.on('close', () => { self._removeStream(socket) })
+      socket.on('error', noop)
     })
   }
 
@@ -202,13 +164,8 @@ class CorestoreNetworker extends Nanoresource {
       stream.destroy()
     }
 
-    return new Promise((resolve, reject) => {
-      this.swarm.destroy(err => {
-        if (err) return reject(err)
-        this.swarm = null
-        return resolve()
-      })
-    })
+    await this.swarm.destroy()
+    this.swarm = null
   }
 
   listen () {
